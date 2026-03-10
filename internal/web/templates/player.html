@@ -10,95 +10,277 @@ body { background: #0a0a0a; color: #e0e0e0; font-family: system-ui, sans-serif; 
 header { background: #1a1a1a; padding: 0.75rem 1.5rem; display: flex; align-items: center; gap: 1rem; border-bottom: 1px solid #333; flex-shrink: 0; }
 header a { color: #60a5fa; text-decoration: none; font-size: 0.875rem; white-space: nowrap; }
 header span { font-size: 0.9rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#player-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; }
+#player-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; position: relative; }
 video { max-width: 100%; max-height: calc(100vh - 120px); width: 100%; background: #000; border-radius: 6px; }
-#overlay {
-  position: absolute; top: 60px; right: 1rem;
-  background: rgba(0,0,0,0.75); color: #ccc; font-size: 0.72rem;
-  padding: 0.5rem 0.75rem; border-radius: 6px; font-family: monospace;
-  line-height: 1.6; pointer-events: none;
-}
+#overlay { position: absolute; top: 60px; right: 1.5rem; background: rgba(0,0,0,0.75); color: #ccc; font-size: 0.72rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-family: monospace; line-height: 1.7; pointer-events: none; }
 #controls { margin-top: 0.75rem; display: flex; align-items: center; gap: 0.75rem; }
 #controls label { font-size: 0.8rem; color: #888; }
 #quality-select { background: #2a2a2a; color: #e0e0e0; border: 1px solid #444; border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem; }
+#loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 0.75rem; color: #888; font-size: 0.9rem; }
+.spinner { width: 36px; height: 36px; border: 3px solid #333; border-top-color: #60a5fa; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 <header>
   <a href="/">← Library</a>
   <span>{{.Title}}</span>
+  <a href="/dashboard" style="margin-left:auto;font-size:0.8rem;color:#888;">Dashboard</a>
 </header>
-<div id="player-wrap" style="position:relative;">
-  <video id="video" controls playsinline></video>
-  <div id="overlay">
+<div id="player-wrap">
+  <div id="loading"><div class="spinner"></div><span>Initializing player…</span></div>
+  <video id="video" controls playsinline style="display:none;"></video>
+  <div id="overlay" style="display:none;">
     <div>Quality: <span id="ov-quality">—</span></div>
     <div>Bandwidth: <span id="ov-bw">—</span></div>
     <div>Buffer: <span id="ov-buf">—</span>s</div>
     <div>Seg dl: <span id="ov-seg">—</span>ms</div>
+    <div>Session: <span id="ov-sess" style="color:#555;font-size:0.65rem;">—</span></div>
   </div>
-  <div id="controls">
+  <div id="controls" style="display:none;">
     <label for="quality-select">Quality:</label>
     <select id="quality-select"><option value="-1">Auto</option></select>
   </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
 <script>
-const videoId = "{{.VideoID}}";
-const src = `/videos/${videoId}/master.m3u8`;
+const VIDEO_ID = "{{.VideoID}}";
+
+// ─── TelemetryClient ──────────────────────────────────────────────────────────
+class TelemetryClient {
+  constructor(sessionId, telemetryUrl) {
+    this.sessionId = sessionId;
+    this.telemetryUrl = telemetryUrl;
+    this.eventBuffer = [];
+    this._started = false;
+    this._rebuffering = false;
+    this._rebufferStartTime = null;
+    this.playbackStartTime = null;
+    this._levels = [];
+    this.flushInterval = setInterval(() => this.flush(), 3000);
+  }
+
+  setLevels(levels) { this._levels = levels; }
+
+  getQualityLabel(level) {
+    if (level < 0 || level >= this._levels.length) return 'auto';
+    const lvl = this._levels[level];
+    return lvl ? lvl.height + 'p' : 'auto';
+  }
+
+  getBufferLength(video) {
+    if (!video.buffered.length) return 0;
+    return Math.max(0, video.buffered.end(video.buffered.length - 1) - video.currentTime);
+  }
+
+  recordPlayRequested() { this.playbackStartTime = performance.now(); }
+
+  recordPlaybackStart(bufferLength) {
+    const ttfm = this.playbackStartTime ? Math.round(performance.now() - this.playbackStartTime) : null;
+    this.push({ event_type: 'playback_start', buffer_length: bufferLength, download_time_ms: ttfm });
+  }
+
+  recordSegmentDownloaded(data) {
+    const stats = data.frag.stats;
+    const dlTime = Math.round(stats.loading.end - stats.loading.start);
+    const bytes = data.frag.loaded || 0;
+    this.push({
+      event_type: 'segment_downloaded',
+      segment_number: data.frag.sn,
+      segment_quality: this.getQualityLabel(data.frag.level),
+      segment_bytes: bytes,
+      download_time_ms: dlTime,
+      throughput_bps: dlTime > 0 ? Math.round(bytes * 8 / (dlTime / 1000)) : null,
+    });
+  }
+
+  recordQualityChange(fromLevel, toLevel) {
+    this.push({
+      event_type: 'quality_change',
+      quality_from: this.getQualityLabel(fromLevel),
+      quality_to: this.getQualityLabel(toLevel),
+    });
+  }
+
+  recordRebufferStart() {
+    this._rebufferStartTime = performance.now();
+    this.push({ event_type: 'rebuffer_start' });
+  }
+
+  recordRebufferEnd() {
+    const duration = this._rebufferStartTime ? Math.round(performance.now() - this._rebufferStartTime) : 0;
+    this.push({ event_type: 'rebuffer_end', rebuffer_duration_ms: duration });
+    this._rebufferStartTime = null;
+  }
+
+  recordHeartbeat(video, hls) {
+    this.push({
+      event_type: 'heartbeat',
+      current_quality: this.getQualityLabel(hls.currentLevel),
+      buffer_length: this.getBufferLength(video),
+      playback_position: video.currentTime,
+    });
+  }
+
+  recordPlaybackEnd() {
+    this.push({ event_type: 'playback_end' });
+    this.flush();
+  }
+
+  push(event) {
+    event.timestamp = new Date().toISOString();
+    this.eventBuffer.push(event);
+  }
+
+  async flush() {
+    if (!this.eventBuffer.length) return;
+    const events = this.eventBuffer.splice(0);
+    try {
+      await fetch(this.telemetryUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ events }),
+      });
+    } catch {
+      this.eventBuffer.unshift(...events);
+    }
+  }
+
+  destroy() {
+    clearInterval(this.flushInterval);
+    this.recordPlaybackEnd();
+  }
+}
+
+// ─── Player Init ──────────────────────────────────────────────────────────────
+function detectDeviceType() {
+  const ua = navigator.userAgent;
+  if (/Mobi|Android/i.test(ua)) return 'mobile';
+  if (/Tablet|iPad/i.test(ua)) return 'tablet';
+  return 'desktop';
+}
+
 const video = document.getElementById('video');
+const loading = document.getElementById('loading');
 const overlay = document.getElementById('overlay');
+const controls = document.getElementById('controls');
 const qualitySelect = document.getElementById('quality-select');
 
-const ovQuality = document.getElementById('ov-quality');
-const ovBw = document.getElementById('ov-bw');
-const ovBuf = document.getElementById('ov-buf');
-const ovSeg = document.getElementById('ov-seg');
+async function initPlayer() {
+  // 1. Create session
+  let session;
+  try {
+    const res = await fetch(`/api/v1/videos/${VIDEO_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_type: detectDeviceType() }),
+    });
+    if (!res.ok) {
+      const msg = await res.text();
+      throw new Error(msg || res.statusText);
+    }
+    session = await res.json();
+  } catch (e) {
+    loading.innerHTML = `<span style="color:#f87171">Failed to start session: ${e.message}</span>`;
+    return;
+  }
 
-if (Hls.isSupported()) {
-  const hls = new Hls({ startLevel: -1 });
-  hls.loadSource(src);
-  hls.attachMedia(video);
+  const TOKEN = session.token;
+  const MANIFEST = session.manifest_url;
+
+  document.getElementById('ov-sess').textContent = session.session_id;
+
+  // 2. Init telemetry
+  const telemetry = new TelemetryClient(session.session_id, session.telemetry_url);
+  telemetry.recordPlayRequested();
+
+  if (!Hls.isSupported()) {
+    // Safari native HLS — token auth won't work for sub-playlists (known limitation)
+    loading.style.display = 'none';
+    video.style.display = 'block';
+    video.src = MANIFEST;
+    video.play().catch(() => {});
+    return;
+  }
+
+  // 3. Init hls.js with signed URL support
+  const hls = new Hls({
+    xhrSetup: function(xhr, url) {
+      const sep = url.includes('?') ? '&' : '?';
+      xhr.open('GET', url + sep + 'token=' + TOKEN, true);
+    },
+  });
 
   hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+    telemetry.setLevels(data.levels);
     data.levels.forEach((lvl, i) => {
       const opt = document.createElement('option');
       opt.value = i;
       opt.textContent = `${lvl.height}p (${Math.round(lvl.bitrate / 1000)}k)`;
       qualitySelect.appendChild(opt);
     });
+    loading.style.display = 'none';
+    video.style.display = 'block';
+    overlay.style.display = 'block';
+    controls.style.display = 'flex';
     video.play().catch(() => {});
   });
 
-  hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
-    const lvl = hls.levels[data.level];
-    ovQuality.textContent = lvl ? `${lvl.height}p` : '—';
-    ovBw.textContent = lvl ? `${Math.round(lvl.bitrate / 1000)}kbps` : '—';
-  });
-
+  // 4. Wire up telemetry events
   hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
-    ovSeg.textContent = Math.round(data.stats.loading.end - data.stats.loading.start);
+    telemetry.recordSegmentDownloaded(data);
+    document.getElementById('ov-seg').textContent =
+      Math.round(data.frag.stats.loading.end - data.frag.stats.loading.start);
   });
 
-  setInterval(() => {
-    if (video.buffered.length > 0) {
-      const buf = video.buffered.end(video.buffered.length - 1) - video.currentTime;
-      ovBuf.textContent = buf.toFixed(1);
-    }
-  }, 1000);
+  hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
+    const fromLevel = hls.previousLevel !== undefined ? hls.previousLevel : -1;
+    telemetry.recordQualityChange(fromLevel, data.level);
+    const lvl = hls.levels[data.level];
+    document.getElementById('ov-quality').textContent = lvl ? `${lvl.height}p` : '—';
+    document.getElementById('ov-bw').textContent = lvl ? `${Math.round(lvl.bitrate / 1000)}kbps` : '—';
+  });
 
+  video.addEventListener('playing', () => {
+    if (!telemetry._started) {
+      telemetry.recordPlaybackStart(telemetry.getBufferLength(video));
+      telemetry._started = true;
+    }
+    if (telemetry._rebuffering) {
+      telemetry.recordRebufferEnd();
+      telemetry._rebuffering = false;
+    }
+  });
+
+  video.addEventListener('waiting', () => {
+    if (telemetry._started && !telemetry._rebuffering) {
+      telemetry.recordRebufferStart();
+      telemetry._rebuffering = true;
+    }
+  });
+
+  video.addEventListener('ended', () => telemetry.recordPlaybackEnd());
+
+  // 5. Heartbeat + buffer overlay
+  setInterval(() => {
+    telemetry.recordHeartbeat(video, hls);
+    document.getElementById('ov-buf').textContent = telemetry.getBufferLength(video).toFixed(1);
+  }, 5000);
+
+  // 6. Quality selector
   qualitySelect.addEventListener('change', () => {
     hls.currentLevel = parseInt(qualitySelect.value, 10);
   });
 
-} else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-  // Native HLS (Safari)
-  video.src = src;
-  video.play().catch(() => {});
-  overlay.style.display = 'none';
-  qualitySelect.parentElement.style.display = 'none';
-} else {
-  video.insertAdjacentHTML('afterend', '<p style="color:#f87171;margin-top:1rem">Your browser does not support HLS playback.</p>');
+  // 7. Cleanup
+  window.addEventListener('beforeunload', () => telemetry.destroy());
+
+  // 8. Start playback
+  hls.loadSource(MANIFEST);
+  hls.attachMedia(video);
 }
+
+initPlayer();
 </script>
 </body>
 </html>

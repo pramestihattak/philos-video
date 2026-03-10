@@ -33,6 +33,12 @@ func (h *PageHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	h.tmpl.ExecuteTemplate(w, "upload.html", nil)
 }
 
+// GET /dashboard
+func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	h.tmpl.ExecuteTemplate(w, "dashboard.html", nil)
+}
+
 // GET /watch/{video_id}
 func (h *PageHandler) Watch(w http.ResponseWriter, r *http.Request) {
 	videoID := r.PathValue("video_id")

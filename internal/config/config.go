@@ -11,6 +11,8 @@ type Config struct {
 	DatabaseURL string
 	DataDir     string
 	WorkerCount int
+	JWTSecret   string
+	JWTExpiry   string
 }
 
 func Load() (*Config, error) {
@@ -19,6 +21,8 @@ func Load() (*Config, error) {
 		DatabaseURL: "postgres://philos:philos@localhost:5433/philos_video?sslmode=disable",
 		DataDir:     "./data",
 		WorkerCount: 2,
+		JWTSecret:   "dev-secret-change-in-production-min-32-chars!",
+		JWTExpiry:   "1h",
 	}
 
 	if v := os.Getenv("PORT"); v != "" {
@@ -40,6 +44,12 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("invalid WORKER_COUNT: %w", err)
 		}
 		cfg.WorkerCount = n
+	}
+	if v := os.Getenv("JWT_SECRET"); v != "" {
+		cfg.JWTSecret = v
+	}
+	if v := os.Getenv("JWT_EXPIRY"); v != "" {
+		cfg.JWTExpiry = v
 	}
 
 	return cfg, nil

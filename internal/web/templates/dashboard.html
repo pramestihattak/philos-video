@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QoE Dashboard — Philos Video</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0f0f0f; color: #e0e0e0; font-family: system-ui, sans-serif; min-height: 100vh; }
+header { background: #1a1a1a; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+header h1 { font-size: 1.2rem; font-weight: 600; }
+header nav { display: flex; gap: 1.5rem; align-items: center; }
+header nav a { color: #60a5fa; text-decoration: none; font-size: 0.875rem; }
+#live-indicator { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #888; }
+#live-dot { width: 8px; height: 8px; border-radius: 50%; background: #555; flex-shrink: 0; }
+#live-dot.connected { background: #4ade80; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
+main { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+/* Metric cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1.25rem; margin-bottom: 2rem; }
+.card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 1.25rem; }
+.card-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: #666; margin-bottom: 0.5rem; }
+.card-value { font-size: 2rem; font-weight: 700; line-height: 1; }
+.card-sub { font-size: 0.78rem; color: #666; margin-top: 0.4rem; }
+.green { color: #4ade80; }
+.yellow { color: #fbbf24; }
+.red { color: #f87171; }
+
+/* Panels */
+.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 2rem; }
+@media (max-width: 700px) { .panels { grid-template-columns: 1fr; } }
+.panel { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 1.25rem; }
+.panel-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: #666; margin-bottom: 1rem; }
+
+/* Quality bars */
+.qbar-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 0.82rem; }
+.qbar-label { width: 40px; color: #aaa; }
+.qbar-track { flex: 1; height: 14px; background: #2a2a2a; border-radius: 3px; overflow: hidden; }
+.qbar-fill { height: 100%; border-radius: 3px; transition: width 0.8s; }
+.qbar-720p { background: #2563eb; }
+.qbar-480p { background: #7c3aed; }
+.qbar-360p { background: #db2777; }
+.qbar-pct { width: 36px; text-align: right; color: #888; font-size: 0.78rem; }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+th { text-align: left; padding: 0.5rem 0.75rem; color: #666; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #2a2a2a; }
+td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #222; }
+tr:last-child td { border-bottom: none; }
+#no-sessions { color: #555; font-size: 0.85rem; padding: 1rem 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>QoE Dashboard</h1>
+  <nav>
+    <a href="/">← Library</a>
+    <div id="live-indicator">
+      <div id="live-dot"></div>
+      <span id="live-label">Connecting…</span>
+    </div>
+  </nav>
+</header>
+<main>
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">Active Sessions</div>
+      <div class="card-value" id="active-sessions">—</div>
+      <div class="card-sub" id="total-sessions-5m">— in last 5 min</div>
+    </div>
+    <div class="card">
+      <div class="card-label">TTFF Median</div>
+      <div class="card-value" id="ttff-median">—</div>
+      <div class="card-sub" id="ttff-p95">p95: —</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Rebuffer Rate</div>
+      <div class="card-value" id="rebuffer-rate">—</div>
+      <div class="card-sub" id="avg-rebuf-duration">avg: —</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Avg Bitrate</div>
+      <div class="card-value" id="avg-bitrate">—</div>
+      <div class="card-sub">video bitrate delivered</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Avg Throughput</div>
+      <div class="card-value" id="avg-throughput">—</div>
+      <div class="card-sub" id="p10-throughput">p10: —</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Quality Switches</div>
+      <div class="card-value" id="quality-switches">—</div>
+      <div class="card-sub">per minute</div>
+    </div>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <div class="panel-title">Quality Distribution</div>
+      <div id="quality-bars">
+        <div class="qbar-row">
+          <span class="qbar-label">720p</span>
+          <div class="qbar-track"><div class="qbar-fill qbar-720p" id="bar-720p" style="width:0%"></div></div>
+          <span class="qbar-pct" id="pct-720p">—</span>
+        </div>
+        <div class="qbar-row">
+          <span class="qbar-label">480p</span>
+          <div class="qbar-track"><div class="qbar-fill qbar-480p" id="bar-480p" style="width:0%"></div></div>
+          <span class="qbar-pct" id="pct-480p">—</span>
+        </div>
+        <div class="qbar-row">
+          <span class="qbar-label">360p</span>
+          <div class="qbar-track"><div class="qbar-fill qbar-360p" id="bar-360p" style="width:0%"></div></div>
+          <span class="qbar-pct" id="pct-360p">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Throughput Health</div>
+      <p style="font-size:0.9rem;margin-bottom:0.5rem;">Avg: <strong id="tp-avg">—</strong></p>
+      <p style="font-size:0.9rem;">Worst 10%: <strong id="tp-p10">—</strong></p>
+      <p style="font-size:0.78rem;color:#555;margin-top:1rem;">Based on segment download measurements</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Per-Video Breakdown</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Video</th>
+            <th>Active Viewers</th>
+            <th>Avg Bitrate</th>
+            <th>Rebuffer Rate</th>
+          </tr>
+        </thead>
+        <tbody id="video-table-body">
+          <tr><td colspan="4" id="no-sessions">No active sessions</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+const dot = document.getElementById('live-dot');
+const liveLabel = document.getElementById('live-label');
+
+function colorClass(value, thresholds) {
+  if (value < thresholds[0]) return 'green';
+  if (value < thresholds[1]) return 'yellow';
+  return 'red';
+}
+
+function setText(id, text, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  if (cls) {
+    el.className = 'card-value ' + cls;
+  }
+}
+
+function updateDashboard(m) {
+  setText('active-sessions', m.active_sessions);
+  document.getElementById('total-sessions-5m').textContent = `${m.total_sessions_5m} in last 5 min`;
+
+  const ttffMs = m.ttff_median_ms || 0;
+  setText('ttff-median', ttffMs ? ttffMs + 'ms' : '—', colorClass(ttffMs, [1000, 2000]));
+  document.getElementById('ttff-p95').textContent = 'p95: ' + (m.ttff_p95_ms ? (m.ttff_p95_ms / 1000).toFixed(1) + 's' : '—');
+
+  const rebufRate = (m.rebuffer_rate || 0) * 100;
+  setText('rebuffer-rate', rebufRate.toFixed(1) + '%', colorClass(m.rebuffer_rate, [0.01, 0.05]));
+  document.getElementById('avg-rebuf-duration').textContent =
+    m.avg_rebuffer_duration_ms ? `avg: ${(m.avg_rebuffer_duration_ms / 1000).toFixed(1)}s` : 'avg: —';
+
+  setText('avg-bitrate', m.avg_bitrate_kbps ? (m.avg_bitrate_kbps / 1000).toFixed(1) + ' Mbps' : '—');
+  setText('avg-throughput', m.avg_throughput_mbps ? m.avg_throughput_mbps.toFixed(1) + ' Mbps' : '—');
+  document.getElementById('p10-throughput').textContent =
+    m.p10_throughput_mbps ? 'p10: ' + m.p10_throughput_mbps.toFixed(1) + ' Mbps' : 'p10: —';
+
+  setText('quality-switches', m.quality_switches_per_min ? m.quality_switches_per_min.toFixed(2) : '0.00');
+
+  // Quality bars
+  const dist = m.quality_distribution || {};
+  ['720p', '480p', '360p'].forEach(q => {
+    const pct = ((dist[q] || 0) * 100);
+    const bar = document.getElementById('bar-' + q);
+    const pctEl = document.getElementById('pct-' + q);
+    if (bar) bar.style.width = pct + '%';
+    if (pctEl) pctEl.textContent = pct > 0 ? pct.toFixed(0) + '%' : '—';
+  });
+
+  document.getElementById('tp-avg').textContent = m.avg_throughput_mbps ? m.avg_throughput_mbps.toFixed(1) + ' Mbps' : '—';
+  document.getElementById('tp-p10').textContent = m.p10_throughput_mbps ? m.p10_throughput_mbps.toFixed(1) + ' Mbps' : '—';
+
+  // Per-video table
+  const tbody = document.getElementById('video-table-body');
+  const videos = m.per_video || [];
+  if (videos.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" id="no-sessions" style="color:#555;text-align:center;padding:1rem;">No active sessions</td></tr>';
+  } else {
+    tbody.innerHTML = videos.map(v => {
+      const rebufPct = ((v.rebuffer_rate || 0) * 100).toFixed(1) + '%';
+      const bitrate = v.avg_bitrate_kbps ? (v.avg_bitrate_kbps / 1000).toFixed(1) + ' Mbps' : '—';
+      const title = v.title || v.video_id.slice(0, 12) + '…';
+      return `<tr>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(v.title || v.video_id)}">${escHtml(title)}</td>
+        <td>${v.active_sessions}</td>
+        <td>${bitrate}</td>
+        <td>${rebufPct}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Connect to SSE stream
+const evtSource = new EventSource('/api/v1/dashboard/stats/stream');
+
+evtSource.onopen = () => {
+  dot.className = 'connected';
+  liveLabel.textContent = 'Live';
+};
+
+evtSource.onmessage = (event) => {
+  try {
+    const metrics = JSON.parse(event.data);
+    updateDashboard(metrics);
+  } catch (e) {
+    console.error('parse error', e);
+  }
+};
+
+evtSource.onerror = () => {
+  dot.className = '';
+  liveLabel.textContent = 'Reconnecting…';
+};
+</script>
+</body>
+</html>
