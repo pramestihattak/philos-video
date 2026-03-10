@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{.Title}} — Live — Philos Video</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0a0a0a; color: #e0e0e0; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+header { background: #1a1a1a; padding: 0.75rem 1.5rem; display: flex; align-items: center; gap: 1rem; border-bottom: 1px solid #333; flex-shrink: 0; }
+header a { color: #60a5fa; text-decoration: none; font-size: 0.875rem; white-space: nowrap; }
+header span { font-size: 0.9rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-badge { background: #dc2626; color: #fff; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; padding: 0.2rem 0.5rem; border-radius: 3px; text-transform: uppercase; flex-shrink: 0; }
+#player-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; position: relative; }
+video { max-width: 100%; max-height: calc(100vh - 120px); width: 100%; background: #000; border-radius: 6px; }
+#overlay { position: absolute; top: 60px; right: 1.5rem; background: rgba(0,0,0,0.75); color: #ccc; font-size: 0.72rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-family: monospace; line-height: 1.7; pointer-events: none; }
+#controls { margin-top: 0.75rem; display: flex; align-items: center; gap: 0.75rem; }
+#controls label { font-size: 0.8rem; color: #888; }
+#quality-select { background: #2a2a2a; color: #e0e0e0; border: 1px solid #444; border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem; }
+#loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 0.75rem; color: #888; font-size: 0.9rem; }
+.spinner { width: 36px; height: 36px; border: 3px solid #333; border-top-color: #dc2626; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Library</a>
+  <span>{{.Title}}</span>
+  <span class="live-badge">LIVE</span>
+  <a href="/dashboard" style="margin-left:auto;font-size:0.8rem;color:#888;">Dashboard</a>
+</header>
+<div id="player-wrap">
+  <div id="loading"><div class="spinner"></div><span>Connecting to live stream…</span></div>
+  <video id="video" controls playsinline style="display:none;"></video>
+  <div id="overlay" style="display:none;">
+    <div>Quality: <span id="ov-quality">—</span></div>
+    <div>Bandwidth: <span id="ov-bw">—</span></div>
+    <div>Buffer: <span id="ov-buf">—</span>s</div>
+    <div>Latency: ~<span id="ov-latency">—</span>s</div>
+  </div>
+  <div id="controls" style="display:none;">
+    <label for="quality-select">Quality:</label>
+    <select id="quality-select"><option value="-1">Auto</option></select>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+<script>
+const STREAM_ID = "{{.StreamID}}";
+
+const video = document.getElementById('video');
+const loading = document.getElementById('loading');
+const overlay = document.getElementById('overlay');
+const controls = document.getElementById('controls');
+const qualitySelect = document.getElementById('quality-select');
+
+async function initPlayer() {
+  let session;
+  try {
+    const res = await fetch(`/api/v1/live/${STREAM_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_type: /Mobi|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop' }),
+    });
+    if (!res.ok) throw new Error(await res.text() || res.statusText);
+    session = await res.json();
+  } catch (e) {
+    loading.innerHTML = `<span style="color:#f87171">Failed to start session: ${e.message}</span>`;
+    return;
+  }
+
+  const TOKEN = session.token;
+  const MANIFEST = session.manifest_url;
+
+  if (!Hls.isSupported()) {
+    loading.style.display = 'none';
+    video.style.display = 'block';
+    video.src = MANIFEST;
+    video.play().catch(() => {});
+    return;
+  }
+
+  const hls = new Hls({
+    liveSyncDurationCount: 3,
+    liveMaxLatencyDurationCount: 5,
+    xhrSetup: function(xhr, url) {
+      const sep = url.includes('?') ? '&' : '?';
+      xhr.open('GET', url + sep + 'token=' + TOKEN, true);
+    },
+  });
+
+  hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+    data.levels.forEach((lvl, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${lvl.height}p (${Math.round(lvl.bitrate / 1000)}k)`;
+      qualitySelect.appendChild(opt);
+    });
+    loading.style.display = 'none';
+    video.style.display = 'block';
+    overlay.style.display = 'block';
+    controls.style.display = 'flex';
+    video.play().catch(() => {});
+  });
+
+  hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
+    const lvl = hls.levels[data.level];
+    document.getElementById('ov-quality').textContent = lvl ? `${lvl.height}p` : '—';
+    document.getElementById('ov-bw').textContent = lvl ? `${Math.round(lvl.bitrate / 1000)}kbps` : '—';
+  });
+
+  // Buffer and latency overlay
+  setInterval(() => {
+    if (!video.buffered.length) return;
+    const bufLen = Math.max(0, video.buffered.end(video.buffered.length - 1) - video.currentTime);
+    document.getElementById('ov-buf').textContent = bufLen.toFixed(1);
+    // Live edge latency (seconds behind live)
+    if (hls.liveSyncPosition) {
+      const latency = hls.liveSyncPosition - video.currentTime;
+      document.getElementById('ov-latency').textContent = Math.max(0, latency).toFixed(1);
+    }
+  }, 2000);
+
+  qualitySelect.addEventListener('change', () => {
+    hls.currentLevel = parseInt(qualitySelect.value, 10);
+  });
+
+  hls.loadSource(MANIFEST);
+  hls.attachMedia(video);
+}
+
+initPlayer();
+</script>
+</body>
+</html>

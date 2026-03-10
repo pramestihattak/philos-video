@@ -11,7 +11,7 @@ db:
 stop:
 	docker compose down
 
-## serve: start the platform server (reads env: PORT, DATABASE_URL, DATA_DIR, WORKER_COUNT)
+## serve: start the platform server (reads env: PORT, DATABASE_URL, DATA_DIR, WORKER_COUNT, RTMP_PORT)
 serve:
 	go run ./cmd/server
 

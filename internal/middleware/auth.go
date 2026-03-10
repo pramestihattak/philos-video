@@ -55,6 +55,34 @@ func (m *AuthMiddleware) RequirePlaybackToken(next http.Handler) http.Handler {
 	})
 }
 
+// RequireLiveToken validates the JWT token on every request under /live/.
+func (m *AuthMiddleware) RequireLiveToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.URL.Query().Get("token")
+		if token == "" {
+			http.Error(w, "missing token", http.StatusUnauthorized)
+			return
+		}
+
+		claims, err := m.sessionSvc.ParseToken(token)
+		if err != nil {
+			http.Error(w, "invalid token", http.StatusForbidden)
+			return
+		}
+
+		requestedStreamID := extractStreamID(r.URL.Path)
+		if claims.StreamID != requestedStreamID {
+			http.Error(w, "token not valid for this stream", http.StatusForbidden)
+			return
+		}
+
+		go m.touchSession(claims.SessionID)
+
+		ctx := context.WithValue(r.Context(), claimsKey{}, claims)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 // ClaimsFromContext retrieves playback claims from the request context.
 func ClaimsFromContext(ctx context.Context) *service.PlaybackClaims {
 	v, _ := ctx.Value(claimsKey{}).(*service.PlaybackClaims)
@@ -81,6 +109,16 @@ func (m *AuthMiddleware) touchSession(sessionID string) {
 // e.g. /videos/abc123/master.m3u8 → "abc123"
 func extractVideoID(path string) string {
 	trimmed := strings.TrimPrefix(path, "/videos/")
+	if idx := strings.IndexByte(trimmed, '/'); idx >= 0 {
+		return trimmed[:idx]
+	}
+	return trimmed
+}
+
+// extractStreamID returns the first path segment after /live/.
+// e.g. /live/ls_abc123/master.m3u8 → "ls_abc123"
+func extractStreamID(path string) string {
+	trimmed := strings.TrimPrefix(path, "/live/")
 	if idx := strings.IndexByte(trimmed, '/'); idx >= 0 {
 		return trimmed[:idx]
 	}

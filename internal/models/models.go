@@ -12,6 +12,10 @@ const (
 	JobStatusRunning   = "running"
 	JobStatusCompleted = "completed"
 	JobStatusFailed    = "failed"
+
+	StreamStatusWaiting = "waiting"
+	StreamStatusLive    = "live"
+	StreamStatusEnded   = "ended"
 )
 
 type Video struct {
@@ -46,7 +50,8 @@ type TranscodeJob struct {
 
 type PlaybackSession struct {
 	ID           string     `json:"id"`
-	VideoID      string     `json:"video_id"`
+	VideoID      string     `json:"video_id,omitempty"`  // set for VOD sessions
+	StreamID     string     `json:"stream_id,omitempty"` // set for live sessions
 	Token        string     `json:"token,omitempty"`
 	DeviceType   string     `json:"device_type,omitempty"`
 	UserAgent    string     `json:"user_agent,omitempty"`
@@ -55,6 +60,29 @@ type PlaybackSession struct {
 	LastActiveAt time.Time  `json:"last_active_at"`
 	EndedAt      *time.Time `json:"ended_at,omitempty"`
 	Status       string     `json:"status"`
+}
+
+type StreamKey struct {
+	ID        string    `json:"id"`
+	UserLabel string    `json:"user_label"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type LiveStream struct {
+	ID           string     `json:"id"`
+	StreamKeyID  string     `json:"stream_key_id"`
+	Title        string     `json:"title"`
+	Status       string     `json:"status"`
+	SourceWidth  int        `json:"source_width,omitempty"`
+	SourceHeight int        `json:"source_height,omitempty"`
+	SourceCodec  string     `json:"source_codec,omitempty"`
+	SourceFPS    string     `json:"source_fps,omitempty"`
+	HLSPath      string     `json:"hls_path,omitempty"`
+	VideoID      string     `json:"video_id,omitempty"`
+	StartedAt    *time.Time `json:"started_at,omitempty"`
+	EndedAt      *time.Time `json:"ended_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 type PlaybackEvent struct {

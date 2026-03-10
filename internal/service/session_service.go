@@ -18,7 +18,8 @@ import (
 type PlaybackClaims struct {
 	jwt.RegisteredClaims
 	SessionID string `json:"sid"`
-	VideoID   string `json:"vid"`
+	VideoID   string `json:"vid,omitempty"`  // set for VOD sessions
+	StreamID  string `json:"stid,omitempty"` // set for live sessions
 }
 
 type SessionService struct {
@@ -108,6 +109,40 @@ func (s *SessionService) ParseToken(tokenStr string) (*PlaybackClaims, error) {
 	return claims, nil
 }
 
+// CreateLiveSession creates a JWT-backed viewer session for a live stream.
+func (s *SessionService) CreateLiveSession(ctx context.Context, streamID, deviceType, userAgent, ipAddress string) (*models.PlaybackSession, string, time.Time, error) {
+	id, err := genSessionID()
+	if err != nil {
+		return nil, "", time.Time{}, fmt.Errorf("generating session ID: %w", err)
+	}
+
+	session := &models.PlaybackSession{
+		ID:         id,
+		StreamID:   streamID,
+		DeviceType: deviceType,
+		UserAgent:  userAgent,
+		IPAddress:  ipAddress,
+		Status:     "active",
+	}
+
+	tokenStr, expiresAt, err := s.generateToken(session)
+	if err != nil {
+		return nil, "", time.Time{}, fmt.Errorf("generating token: %w", err)
+	}
+	session.Token = tokenStr
+
+	if err := s.sessions.Create(ctx, session); err != nil {
+		return nil, "", time.Time{}, fmt.Errorf("saving session: %w", err)
+	}
+
+	slog.Info("live session created",
+		slog.String("session_id", session.ID),
+		slog.String("stream_id", streamID),
+	)
+
+	return session, tokenStr, expiresAt, nil
+}
+
 func (s *SessionService) generateToken(session *models.PlaybackSession) (string, time.Time, error) {
 	expiresAt := time.Now().Add(s.jwtExpiry)
 	claims := PlaybackClaims{
@@ -118,6 +153,7 @@ func (s *SessionService) generateToken(session *models.PlaybackSession) (string,
 		},
 		SessionID: session.ID,
 		VideoID:   session.VideoID,
+		StreamID:  session.StreamID,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := token.SignedString([]byte(s.jwtSecret))

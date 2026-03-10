@@ -23,19 +23,20 @@ type timedEvent struct {
 
 // DashboardMetrics is the aggregated QoE snapshot.
 type DashboardMetrics struct {
-	Timestamp          time.Time          `json:"timestamp"`
-	ActiveSessions     int                `json:"active_sessions"`
-	TotalSessionsLast5m int               `json:"total_sessions_5m"`
-	TTFFMedianMs       int                `json:"ttff_median_ms"`
-	TTFFP95Ms          int                `json:"ttff_p95_ms"`
-	RebufferRate       float64            `json:"rebuffer_rate"`
-	AvgRebufferDurationMs int             `json:"avg_rebuffer_duration_ms"`
-	AvgBitrateKbps     float64            `json:"avg_bitrate_kbps"`
-	QualityDistribution map[string]float64 `json:"quality_distribution"`
-	QualitySwitchesPerMin float64         `json:"quality_switches_per_min"`
-	AvgThroughputMbps  float64            `json:"avg_throughput_mbps"`
-	P10ThroughputMbps  float64            `json:"p10_throughput_mbps"`
-	PerVideo           []VideoMetrics     `json:"per_video"`
+	Timestamp             time.Time          `json:"timestamp"`
+	ActiveSessions        int                `json:"active_sessions"`
+	TotalSessionsLast5m   int                `json:"total_sessions_5m"`
+	TTFFMedianMs          int                `json:"ttff_median_ms"`
+	TTFFP95Ms             int                `json:"ttff_p95_ms"`
+	RebufferRate          float64            `json:"rebuffer_rate"`
+	AvgRebufferDurationMs int                `json:"avg_rebuffer_duration_ms"`
+	AvgBitrateKbps        float64            `json:"avg_bitrate_kbps"`
+	QualityDistribution   map[string]float64 `json:"quality_distribution"`
+	QualitySwitchesPerMin float64            `json:"quality_switches_per_min"`
+	AvgThroughputMbps     float64            `json:"avg_throughput_mbps"`
+	P10ThroughputMbps     float64            `json:"p10_throughput_mbps"`
+	PerVideo              []VideoMetrics     `json:"per_video"`
+	ActiveLiveStreams      int                `json:"active_live_streams"`
 }
 
 // VideoMetrics is the per-video breakdown within DashboardMetrics.
@@ -45,6 +46,11 @@ type VideoMetrics struct {
 	ActiveSessions int     `json:"active_sessions"`
 	AvgBitrateKbps float64 `json:"avg_bitrate_kbps"`
 	RebufferRate   float64 `json:"rebuffer_rate"`
+}
+
+// LiveCounter is implemented by the live.Manager to report active stream count.
+type LiveCounter interface {
+	ActiveCount() int
 }
 
 // Aggregator maintains a sliding window of playback metrics in memory.
@@ -61,7 +67,15 @@ type Aggregator struct {
 	subMu       sync.Mutex
 	subscribers map[chan *DashboardMetrics]struct{}
 
-	videoRepo *repository.VideoRepo
+	videoRepo   *repository.VideoRepo
+	liveCounter LiveCounter
+}
+
+// SetLiveCounter lets main.go wire in the live manager after construction.
+func (a *Aggregator) SetLiveCounter(lc LiveCounter) {
+	a.mu.Lock()
+	a.liveCounter = lc
+	a.mu.Unlock()
 }
 
 // New creates a new Aggregator and starts its background loop.
@@ -189,6 +203,7 @@ func (a *Aggregator) pruneSessions() {
 
 func (a *Aggregator) recalculate() *DashboardMetrics {
 	a.mu.RLock()
+	liveCounter := a.liveCounter
 	events := make([]timedEvent, len(a.recentEvents))
 	copy(events, a.recentEvents)
 	activeSessions := make(map[string]time.Time, len(a.activeSessions))
@@ -374,6 +389,10 @@ func (a *Aggregator) recalculate() *DashboardMetrics {
 		perVideo = perVideo[:10]
 	}
 	m.PerVideo = perVideo
+
+	if liveCounter != nil {
+		m.ActiveLiveStreams = liveCounter.ActiveCount()
+	}
 
 	return m
 }

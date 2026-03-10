@@ -18,9 +18,9 @@ func NewSessionRepo(db *sql.DB) *SessionRepo {
 
 func (r *SessionRepo) Create(ctx context.Context, s *models.PlaybackSession) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO playback_sessions (id, video_id, token, device_type, user_agent, ip_address)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		s.ID, s.VideoID, s.Token, ns(s.DeviceType), ns(s.UserAgent), ns(s.IPAddress),
+		`INSERT INTO playback_sessions (id, video_id, stream_id, token, device_type, user_agent, ip_address)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		s.ID, ns(s.VideoID), ns(s.StreamID), s.Token, ns(s.DeviceType), ns(s.UserAgent), ns(s.IPAddress),
 	)
 	return err
 }
@@ -28,11 +28,11 @@ func (r *SessionRepo) Create(ctx context.Context, s *models.PlaybackSession) err
 func (r *SessionRepo) Get(ctx context.Context, id string) (*models.PlaybackSession, error) {
 	s := &models.PlaybackSession{}
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, video_id, token,
+		`SELECT id, COALESCE(video_id,''), COALESCE(stream_id,''), token,
 		        COALESCE(device_type,''), COALESCE(user_agent,''), COALESCE(ip_address,''),
 		        started_at, last_active_at, ended_at, status
 		 FROM playback_sessions WHERE id=$1`, id,
-	).Scan(&s.ID, &s.VideoID, &s.Token,
+	).Scan(&s.ID, &s.VideoID, &s.StreamID, &s.Token,
 		&s.DeviceType, &s.UserAgent, &s.IPAddress,
 		&s.StartedAt, &s.LastActiveAt, &s.EndedAt, &s.Status)
 	if err == sql.ErrNoRows {

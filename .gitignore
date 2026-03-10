@@ -14,9 +14,6 @@ data/
 *.mkv
 *.webm
 
-# Scratch / planning files
-prompt.md
-
 # macOS
 .DS_Store
 

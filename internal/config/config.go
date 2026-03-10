@@ -13,6 +13,7 @@ type Config struct {
 	WorkerCount int
 	JWTSecret   string
 	JWTExpiry   string
+	RTMPPort    int
 }
 
 func Load() (*Config, error) {
@@ -23,6 +24,7 @@ func Load() (*Config, error) {
 		WorkerCount: 2,
 		JWTSecret:   "dev-secret-change-in-production-min-32-chars!",
 		JWTExpiry:   "1h",
+		RTMPPort:    1935,
 	}
 
 	if v := os.Getenv("PORT"); v != "" {
@@ -50,6 +52,13 @@ func Load() (*Config, error) {
 	}
 	if v := os.Getenv("JWT_EXPIRY"); v != "" {
 		cfg.JWTExpiry = v
+	}
+	if v := os.Getenv("RTMP_PORT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid RTMP_PORT: %w", err)
+		}
+		cfg.RTMPPort = n
 	}
 
 	return cfg, nil

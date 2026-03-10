@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Go Live — Philos Video</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0f0f0f; color: #e0e0e0; font-family: system-ui, sans-serif; min-height: 100vh; }
+header { background: #1a1a1a; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+header h1 { font-size: 1.2rem; font-weight: 600; }
+header nav a { color: #60a5fa; text-decoration: none; font-size: 0.875rem; }
+main { max-width: 760px; margin: 0 auto; padding: 2rem 1.5rem; }
+h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; color: #e0e0e0; }
+.section { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; }
+label { font-size: 0.82rem; color: #888; display: block; margin-bottom: 0.4rem; margin-top: 0.9rem; }
+label:first-of-type { margin-top: 0; }
+input, select { width: 100%; background: #111; border: 1px solid #333; border-radius: 6px; padding: 0.5rem 0.75rem; color: #e0e0e0; font-size: 0.9rem; }
+input:focus, select:focus { outline: none; border-color: #60a5fa; }
+.key-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.key-row .key-id { font-family: monospace; font-size: 0.8rem; color: #60a5fa; flex: 1; background: #111; padding: 0.4rem 0.6rem; border-radius: 4px; border: 1px solid #2a2a2a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.key-row .key-label { color: #888; font-size: 0.78rem; min-width: 80px; }
+.key-row button { background: #3f1515; color: #f87171; border: 1px solid #5a2020; border-radius: 4px; padding: 0.3rem 0.6rem; font-size: 0.75rem; cursor: pointer; }
+.key-row button:hover { background: #5a2020; }
+.rtmp-info { background: #111; border: 1px solid #2a2a2a; border-radius: 6px; padding: 0.75rem 1rem; font-family: monospace; font-size: 0.82rem; color: #60a5fa; margin-top: 0.5rem; }
+.btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.55rem 1.2rem; border-radius: 6px; font-size: 0.875rem; font-weight: 500; cursor: pointer; border: none; }
+.btn-primary { background: #2563eb; color: #fff; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-danger:hover { background: #b91c1c; }
+.status { font-size: 0.82rem; margin-top: 0.5rem; color: #888; }
+#create-result { font-family: monospace; font-size: 0.78rem; color: #4ade80; margin-top: 0.75rem; background: #0a1a0a; border: 1px solid #1a3a1a; border-radius: 4px; padding: 0.5rem 0.75rem; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Go Live</h1>
+  <nav><a href="/">← Library</a></nav>
+</header>
+<main>
+  <div class="section">
+    <h2>Stream Keys</h2>
+    <p style="font-size:0.85rem;color:#666;margin-bottom:1rem;">Use a stream key to authenticate OBS with the RTMP ingest server.</p>
+
+    <div id="key-list"><p style="color:#555;font-size:0.85rem;">Loading…</p></div>
+
+    <div style="margin-top:1.25rem;display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;">
+      <div style="flex:1;min-width:180px;">
+        <label for="new-key-label">Label for new key</label>
+        <input id="new-key-label" type="text" placeholder="e.g. Main stream" maxlength="80">
+      </div>
+      <button class="btn btn-primary" onclick="createKey()">Create Key</button>
+    </div>
+    <div id="create-result"></div>
+  </div>
+
+  <div class="section">
+    <h2>OBS Setup</h2>
+    <label>RTMP Server URL</label>
+    <div class="rtmp-info" id="rtmp-url">rtmp://localhost:1935/live</div>
+    <label style="margin-top:1rem;">Stream Key</label>
+    <p style="font-size:0.82rem;color:#666;margin-top:0.25rem;">Paste the stream key ID (starting with <code style="color:#60a5fa">sk_</code>) from above into the OBS Stream Key field.</p>
+    <p style="font-size:0.82rem;color:#666;margin-top:0.5rem;">Settings: <strong>Service → Custom</strong>, <strong>Video: 1280×720 60fps</strong>, <strong>Bitrate: 2500 Kbps</strong>.</p>
+  </div>
+</main>
+
+<script>
+async function loadKeys() {
+  const res = await fetch('/api/v1/stream-keys');
+  const keys = await res.json();
+  const list = document.getElementById('key-list');
+  if (!keys || !keys.length) {
+    list.innerHTML = '<p style="color:#555;font-size:0.85rem;">No stream keys. Create one below.</p>';
+    return;
+  }
+  list.innerHTML = keys.map(k => `
+    <div class="key-row">
+      <span class="key-label">${escHtml(k.user_label)}</span>
+      <span class="key-id" title="${escHtml(k.id)}">${escHtml(k.id)}</span>
+      <button onclick="deactivate('${escHtml(k.id)}')">Revoke</button>
+    </div>
+  `).join('');
+}
+
+async function createKey() {
+  const label = document.getElementById('new-key-label').value.trim();
+  if (!label) { alert('Enter a label'); return; }
+  const res = await fetch('/api/v1/stream-keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label }),
+  });
+  if (!res.ok) { alert('Failed to create key'); return; }
+  const sk = await res.json();
+  document.getElementById('new-key-label').value = '';
+  const result = document.getElementById('create-result');
+  result.textContent = `Created: ${sk.id}`;
+  result.style.display = 'block';
+  loadKeys();
+}
+
+async function deactivate(id) {
+  if (!confirm('Revoke this stream key?')) return;
+  await fetch(`/api/v1/stream-keys/${id}`, { method: 'DELETE' });
+  loadKeys();
+}
+
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Show actual RTMP host
+document.getElementById('rtmp-url').textContent = `rtmp://${location.hostname}:1935/live`;
+
+loadKeys();
+</script>
+</body>
+</html>

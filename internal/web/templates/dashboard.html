@@ -95,6 +95,11 @@ tr:last-child td { border-bottom: none; }
       <div class="card-value" id="quality-switches">—</div>
       <div class="card-sub">per minute</div>
     </div>
+    <div class="card">
+      <div class="card-label">Live Streams</div>
+      <div class="card-value" id="active-live">—</div>
+      <div class="card-sub">currently broadcasting</div>
+    </div>
   </div>
 
   <div class="panels">
@@ -185,6 +190,7 @@ function updateDashboard(m) {
     m.p10_throughput_mbps ? 'p10: ' + m.p10_throughput_mbps.toFixed(1) + ' Mbps' : 'p10: —';
 
   setText('quality-switches', m.quality_switches_per_min ? m.quality_switches_per_min.toFixed(2) : '0.00');
+  setText('active-live', m.active_live_streams != null ? m.active_live_streams : '0');
 
   // Quality bars
   const dist = m.quality_distribution || {};
