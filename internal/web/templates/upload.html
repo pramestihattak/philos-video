@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Philos Video — Upload</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0f0f0f; color: #e0e0e0; font-family: system-ui, sans-serif; min-height: 100vh; }
+header { background: #1a1a1a; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+header h1 { font-size: 1.25rem; font-weight: 600; }
+header a { color: #60a5fa; text-decoration: none; font-size: 0.875rem; }
+main { max-width: 600px; margin: 4rem auto; padding: 0 1.5rem; }
+h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; }
+#drop-zone {
+  border: 2px dashed #444; border-radius: 12px; padding: 3rem 2rem;
+  text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;
+  background: #1a1a1a;
+}
+#drop-zone.drag-over { border-color: #60a5fa; background: #1a2a3a; }
+#drop-zone input[type=file] { display: none; }
+#drop-zone .icon { font-size: 3rem; margin-bottom: 1rem; }
+#drop-zone p { color: #888; font-size: 0.9rem; margin-top: 0.5rem; }
+#drop-zone .btn { display: inline-block; margin-top: 1rem; background: #2563eb; color: #fff; padding: 0.6rem 1.5rem; border-radius: 6px; font-size: 0.875rem; font-weight: 500; cursor: pointer; border: none; }
+#drop-zone .btn:hover { background: #1d4ed8; }
+#status { margin-top: 2rem; display: none; }
+#status-label { font-size: 0.9rem; color: #aaa; margin-bottom: 0.5rem; }
+#progress-bar { height: 8px; background: #2a2a2a; border-radius: 999px; overflow: hidden; }
+#progress-fill { height: 100%; background: #2563eb; border-radius: 999px; width: 0%; transition: width 0.3s; }
+#status-msg { margin-top: 0.75rem; font-size: 0.85rem; color: #888; }
+#result { margin-top: 1.5rem; display: none; }
+#result a { background: #14532d; color: #4ade80; padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-weight: 500; display: inline-block; }
+#error-msg { margin-top: 1rem; color: #f87171; font-size: 0.875rem; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Philos Video</h1>
+  <a href="/">← Library</a>
+</header>
+<main>
+  <h2>Upload Video</h2>
+  <div id="drop-zone">
+    <input type="file" id="file-input" accept="video/*">
+    <div class="icon">🎬</div>
+    <strong>Drag &amp; drop a video here</strong>
+    <p>or</p>
+    <button class="btn" onclick="document.getElementById('file-input').click()">Choose File</button>
+    <p id="file-name" style="margin-top:0.75rem;color:#ccc;"></p>
+  </div>
+  <div id="status">
+    <div id="status-label">Uploading…</div>
+    <div id="progress-bar"><div id="progress-fill"></div></div>
+    <div id="status-msg"></div>
+  </div>
+  <div id="result">
+    <a id="watch-link" href="#">▶ Watch Video</a>
+  </div>
+  <div id="error-msg"></div>
+</main>
+<script>
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const statusEl = document.getElementById('status');
+const statusLabel = document.getElementById('status-label');
+const progressFill = document.getElementById('progress-fill');
+const statusMsg = document.getElementById('status-msg');
+const resultEl = document.getElementById('result');
+const watchLink = document.getElementById('watch-link');
+const errorMsg = document.getElementById('error-msg');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) startUpload(file);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) startUpload(fileInput.files[0]);
+});
+
+function setProgress(pct, label, msg) {
+  progressFill.style.width = pct + '%';
+  if (label) statusLabel.textContent = label;
+  if (msg !== undefined) statusMsg.textContent = msg;
+}
+
+function showError(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.style.display = 'block';
+}
+
+async function startUpload(file) {
+  document.getElementById('file-name').textContent = file.name;
+  statusEl.style.display = 'block';
+  resultEl.style.display = 'none';
+  errorMsg.style.display = 'none';
+  dropZone.style.pointerEvents = 'none';
+  dropZone.style.opacity = '0.5';
+
+  const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+
+  // Init upload
+  let uploadId;
+  try {
+    const res = await fetch('/api/v1/uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, total_chunks: totalChunks }),
+    });
+    if (!res.ok) throw new Error('Init failed: ' + await res.text());
+    const data = await res.json();
+    uploadId = data.upload_id;
+  } catch (e) {
+    showError('Upload init failed: ' + e.message);
+    return;
+  }
+
+  // Upload chunks sequentially
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const chunk = file.slice(start, start + CHUNK_SIZE);
+    const pct = Math.round((i / totalChunks) * 70);
+    setProgress(pct, `Uploading… chunk ${i + 1}/${totalChunks}`, '');
+
+    try {
+      const res = await fetch(`/api/v1/uploads/${uploadId}/chunks/${i}`, {
+        method: 'PUT',
+        body: chunk,
+      });
+      if (!res.ok) throw new Error('Chunk upload failed: ' + await res.text());
+    } catch (e) {
+      showError('Upload failed: ' + e.message);
+      return;
+    }
+  }
+
+  setProgress(75, 'Processing…', 'Video is being transcoded');
+
+  // Poll for completion
+  watchLink.href = `/watch/${uploadId}`;
+  let attempts = 0;
+  const maxAttempts = 600; // 10 minutes at 1s intervals
+
+  const poll = async () => {
+    if (attempts++ > maxAttempts) {
+      showError('Timed out waiting for processing');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/v1/videos/${uploadId}/status`);
+      if (!res.ok) { setTimeout(poll, 2000); return; }
+      const s = await res.json();
+      const status = s.video ? s.video.status : null;
+      const progress = s.progress || 0;
+
+      if (status === 'ready') {
+        setProgress(100, 'Ready!', 'Transcode complete');
+        resultEl.style.display = 'block';
+      } else if (status === 'failed') {
+        showError('Transcode failed. Check server logs.');
+      } else {
+        const pct = 75 + Math.round(progress * 25);
+        const stage = s.job ? (s.job.stage || 'processing') : 'processing';
+        setProgress(pct, 'Processing…', stage);
+        setTimeout(poll, 1500);
+      }
+    } catch { setTimeout(poll, 2000); }
+  };
+
+  setTimeout(poll, 1000);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Philos Video — Library</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0f0f0f; color: #e0e0e0; font-family: system-ui, sans-serif; min-height: 100vh; }
+header { background: #1a1a1a; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+header h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; }
+header a { background: #2563eb; color: #fff; padding: 0.5rem 1.25rem; border-radius: 6px; text-decoration: none; font-size: 0.875rem; font-weight: 500; }
+header a:hover { background: #1d4ed8; }
+main { padding: 2rem; max-width: 1400px; margin: 0 auto; }
+#grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; }
+.card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; overflow: hidden; transition: transform 0.15s, border-color 0.15s; }
+.card:hover { transform: translateY(-2px); border-color: #444; }
+.card a { text-decoration: none; color: inherit; display: block; }
+.thumb { background: #111; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; }
+.thumb.ready { background: #111; }
+.card-body { padding: 0.875rem 1rem; }
+.card-title { font-size: 0.9rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.4rem; }
+.badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.badge-uploading { background: #1e3a5f; color: #60a5fa; }
+.badge-processing { background: #2d1b4e; color: #c084fc; }
+.badge-ready { background: #14352a; color: #4ade80; }
+.badge-failed { background: #3b1a1a; color: #f87171; }
+.progress-bar { height: 3px; background: #2a2a2a; border-radius: 999px; margin-top: 0.5rem; }
+.progress-fill { height: 100%; background: #8b5cf6; border-radius: 999px; transition: width 0.5s; }
+#empty { display: none; text-align: center; padding: 4rem 2rem; color: #555; }
+#empty h2 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+#empty p { font-size: 0.875rem; }
+#empty a { color: #60a5fa; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Philos Video</h1>
+  <a href="/upload">+ Upload</a>
+</header>
+<main>
+  <div id="grid"></div>
+  <div id="empty">
+    <h2>No videos yet</h2>
+    <p><a href="/upload">Upload your first video</a> to get started.</p>
+  </div>
+</main>
+<script>
+const ICONS = { uploading: '⬆️', processing: '⚙️', ready: '▶️', failed: '❌' };
+
+function statusBadge(status) {
+  return `<span class="badge badge-${status}">${ICONS[status] || ''} ${status}</span>`;
+}
+
+function progressBar(status, progress) {
+  if (status === 'ready' || status === 'uploading') return '';
+  const pct = Math.round((progress || 0) * 100);
+  return `<div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>`;
+}
+
+function renderCard(v) {
+  const href = v.status === 'ready' ? `/watch/${v.id}` : '#';
+  const thumbClass = v.status === 'ready' ? 'thumb ready' : 'thumb';
+  return `
+    <div class="card" data-id="${v.id}">
+      <a href="${href}">
+        <div class="${thumbClass}">${v.status === 'ready' ? '▶' : ICONS[v.status] || '📄'}</div>
+        <div class="card-body">
+          <div class="card-title">${escHtml(v.title)}</div>
+          ${statusBadge(v.status)}
+          ${progressBar(v.status, v._progress)}
+        </div>
+      </a>
+    </div>`;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+let prevStatuses = {};
+
+async function refresh() {
+  try {
+    const res = await fetch('/api/v1/videos');
+    if (!res.ok) return;
+    const videos = await res.json();
+
+    // For processing videos, fetch status/progress
+    await Promise.all(videos.map(async v => {
+      if (v.status === 'processing') {
+        try {
+          const sr = await fetch(`/api/v1/videos/${v.id}/status`);
+          if (sr.ok) {
+            const s = await sr.json();
+            v._progress = s.progress;
+          }
+        } catch {}
+      }
+    }));
+
+    const grid = document.getElementById('grid');
+    const empty = document.getElementById('empty');
+
+    if (!videos || videos.length === 0) {
+      grid.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+
+    // Update or add cards
+    const ids = new Set(videos.map(v => v.id));
+
+    // Remove cards no longer present
+    grid.querySelectorAll('.card').forEach(el => {
+      if (!ids.has(el.dataset.id)) el.remove();
+    });
+
+    videos.forEach(v => {
+      const existing = grid.querySelector(`.card[data-id="${v.id}"]`);
+      const html = renderCard(v);
+      if (existing) {
+        // Only re-render if status changed or it's processing
+        if (prevStatuses[v.id] !== v.status || v.status === 'processing') {
+          existing.outerHTML = html;
+        }
+      } else {
+        grid.insertAdjacentHTML('afterbegin', html);
+      }
+      prevStatuses[v.id] = v.status;
+    });
+  } catch (e) {
+    console.error('refresh error', e);
+  }
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

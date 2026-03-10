@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{.Title}} — Philos Video</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0a0a0a; color: #e0e0e0; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+header { background: #1a1a1a; padding: 0.75rem 1.5rem; display: flex; align-items: center; gap: 1rem; border-bottom: 1px solid #333; flex-shrink: 0; }
+header a { color: #60a5fa; text-decoration: none; font-size: 0.875rem; white-space: nowrap; }
+header span { font-size: 0.9rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#player-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; }
+video { max-width: 100%; max-height: calc(100vh - 120px); width: 100%; background: #000; border-radius: 6px; }
+#overlay {
+  position: absolute; top: 60px; right: 1rem;
+  background: rgba(0,0,0,0.75); color: #ccc; font-size: 0.72rem;
+  padding: 0.5rem 0.75rem; border-radius: 6px; font-family: monospace;
+  line-height: 1.6; pointer-events: none;
+}
+#controls { margin-top: 0.75rem; display: flex; align-items: center; gap: 0.75rem; }
+#controls label { font-size: 0.8rem; color: #888; }
+#quality-select { background: #2a2a2a; color: #e0e0e0; border: 1px solid #444; border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">← Library</a>
+  <span>{{.Title}}</span>
+</header>
+<div id="player-wrap" style="position:relative;">
+  <video id="video" controls playsinline></video>
+  <div id="overlay">
+    <div>Quality: <span id="ov-quality">—</span></div>
+    <div>Bandwidth: <span id="ov-bw">—</span></div>
+    <div>Buffer: <span id="ov-buf">—</span>s</div>
+    <div>Seg dl: <span id="ov-seg">—</span>ms</div>
+  </div>
+  <div id="controls">
+    <label for="quality-select">Quality:</label>
+    <select id="quality-select"><option value="-1">Auto</option></select>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+<script>
+const videoId = "{{.VideoID}}";
+const src = `/videos/${videoId}/master.m3u8`;
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const qualitySelect = document.getElementById('quality-select');
+
+const ovQuality = document.getElementById('ov-quality');
+const ovBw = document.getElementById('ov-bw');
+const ovBuf = document.getElementById('ov-buf');
+const ovSeg = document.getElementById('ov-seg');
+
+if (Hls.isSupported()) {
+  const hls = new Hls({ startLevel: -1 });
+  hls.loadSource(src);
+  hls.attachMedia(video);
+
+  hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+    data.levels.forEach((lvl, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${lvl.height}p (${Math.round(lvl.bitrate / 1000)}k)`;
+      qualitySelect.appendChild(opt);
+    });
+    video.play().catch(() => {});
+  });
+
+  hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
+    const lvl = hls.levels[data.level];
+    ovQuality.textContent = lvl ? `${lvl.height}p` : '—';
+    ovBw.textContent = lvl ? `${Math.round(lvl.bitrate / 1000)}kbps` : '—';
+  });
+
+  hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
+    ovSeg.textContent = Math.round(data.stats.loading.end - data.stats.loading.start);
+  });
+
+  setInterval(() => {
+    if (video.buffered.length > 0) {
+      const buf = video.buffered.end(video.buffered.length - 1) - video.currentTime;
+      ovBuf.textContent = buf.toFixed(1);
+    }
+  }, 1000);
+
+  qualitySelect.addEventListener('change', () => {
+    hls.currentLevel = parseInt(qualitySelect.value, 10);
+  });
+
+} else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+  // Native HLS (Safari)
+  video.src = src;
+  video.play().catch(() => {});
+  overlay.style.display = 'none';
+  qualitySelect.parentElement.style.display = 'none';
+} else {
+  video.insertAdjacentHTML('afterend', '<p style="color:#f87171;margin-top:1rem">Your browser does not support HLS playback.</p>');
+}
+</script>
+</body>
+</html>

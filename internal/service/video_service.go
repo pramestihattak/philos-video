@@ -1,0 +1,50 @@
+package service
+
+import (
+	"philos-video/internal/models"
+	"philos-video/internal/repository"
+)
+
+type VideoService struct {
+	videos *repository.VideoRepo
+	jobs   *repository.JobRepo
+}
+
+func NewVideoService(videos *repository.VideoRepo, jobs *repository.JobRepo) *VideoService {
+	return &VideoService{videos: videos, jobs: jobs}
+}
+
+type VideoStatus struct {
+	Video    *models.Video        `json:"video"`
+	Job      *models.TranscodeJob `json:"job,omitempty"`
+	Progress float64              `json:"progress"`
+}
+
+func (s *VideoService) GetVideo(id string) (*models.Video, error) {
+	return s.videos.GetByID(id)
+}
+
+func (s *VideoService) ListVideos() ([]*models.Video, error) {
+	return s.videos.List()
+}
+
+func (s *VideoService) GetVideoStatus(id string) (*VideoStatus, error) {
+	v, err := s.videos.GetByID(id)
+	if err != nil || v == nil {
+		return nil, err
+	}
+
+	job, err := s.jobs.GetByVideoID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	vs := &VideoStatus{Video: v, Job: job}
+	if job != nil {
+		vs.Progress = job.Progress
+	}
+	if v.Status == models.VideoStatusReady {
+		vs.Progress = 1.0
+	}
+	return vs, nil
+}

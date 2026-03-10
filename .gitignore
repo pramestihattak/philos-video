@@ -4,6 +4,9 @@ bin/
 # HLS output
 output/
 
+# Platform data directory
+data/
+
 # Input video files
 *.mp4
 *.mov
