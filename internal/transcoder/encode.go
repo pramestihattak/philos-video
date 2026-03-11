@@ -21,7 +21,14 @@ func Encode(ctx context.Context, input, outputDir string, p Profile) error {
 
 	output := filepath.Join(profileDir, "intermediate.mp4")
 
-	scale := fmt.Sprintf("scale=%d:%d", p.Width, p.Height)
+	// Scale to the short-side target (p.Height) while preserving aspect ratio.
+	// For landscape (iw > ih): fix height, auto-calc width.
+	// For portrait  (iw < ih): fix width,  auto-calc height.
+	// -2 tells FFmpeg to auto-calculate that dimension (and keep it divisible by 2).
+	scale := fmt.Sprintf(
+		"scale='if(gt(iw,ih),-2,min(%d,iw))':'if(gt(iw,ih),min(%d,ih),-2)'",
+		p.Height, p.Height,
+	)
 
 	args := []string{
 		"-y",

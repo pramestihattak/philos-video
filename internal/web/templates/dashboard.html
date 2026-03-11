@@ -4,64 +4,90 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QoE Dashboard — Philos Video</title>
+<script>(function(){var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t)})();</script>
 <style>
+:root {
+  --bg: #f7f7f5; --surface: #ffffff; --surface2: #f1f1ee;
+  --border: #e6e6e1; --border2: #d0d0cb;
+  --text: #18181b; --text-2: #52525b; --text-3: #a1a1aa;
+  --link: #2563eb; --link-dim: #1d4ed8;
+  --green: #16a34a; --yellow: #ca8a04; --red: #dc2626;
+  --table-row-border: #f1f1ee;
+  --bar-track: #e6e6e1;
+}
+[data-theme="dark"] {
+  --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #111;
+  --border: #2a2a2a; --border2: #3a3a3a;
+  --text: #e4e4e7; --text-2: #a1a1aa; --text-3: #52525b;
+  --link: #60a5fa; --link-dim: #93c5fd;
+  --green: #4ade80; --yellow: #fbbf24; --red: #f87171;
+  --table-row-border: #222;
+  --bar-track: #2a2a2a;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #0f0f0f; color: #e0e0e0; font-family: system-ui, sans-serif; min-height: 100vh; }
-header { background: #1a1a1a; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; min-height: 100vh; }
+header { background: var(--surface); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
 header h1 { font-size: 1.2rem; font-weight: 600; }
-header nav { display: flex; gap: 1.5rem; align-items: center; }
-header nav a { color: #60a5fa; text-decoration: none; font-size: 0.875rem; }
-#live-indicator { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #888; }
-#live-dot { width: 8px; height: 8px; border-radius: 50%; background: #555; flex-shrink: 0; }
+.header-right { display: flex; align-items: center; gap: 1rem; }
+header nav { display: flex; gap: 1rem; align-items: center; }
+header nav a { color: var(--link); text-decoration: none; font-size: 0.875rem; }
+#live-indicator { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--text-3); }
+#live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border2); flex-shrink: 0; }
 #live-dot.connected { background: #4ade80; animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
+#theme-toggle { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-2); flex-shrink: 0; padding: 0; }
+#theme-toggle:hover { background: var(--border2); }
 main { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem; }
 
 /* Metric cards */
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1.25rem; margin-bottom: 2rem; }
-.card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 1.25rem; }
-.card-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: #666; margin-bottom: 0.5rem; }
-.card-value { font-size: 2rem; font-weight: 700; line-height: 1; }
-.card-sub { font-size: 0.78rem; color: #666; margin-top: 0.4rem; }
-.green { color: #4ade80; }
-.yellow { color: #fbbf24; }
-.red { color: #f87171; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+.card-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); margin-bottom: 0.5rem; }
+.card-value { font-size: 2rem; font-weight: 700; line-height: 1; color: var(--text); }
+.card-sub { font-size: 0.78rem; color: var(--text-3); margin-top: 0.4rem; }
+.green { color: var(--green); }
+.yellow { color: var(--yellow); }
+.red { color: var(--red); }
 
 /* Panels */
 .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 2rem; }
 @media (max-width: 700px) { .panels { grid-template-columns: 1fr; } }
-.panel { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 1.25rem; }
-.panel-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: #666; margin-bottom: 1rem; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+.panel-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); margin-bottom: 1rem; }
+.panel p { color: var(--text-2); }
+.panel p strong { color: var(--text); }
+.panel p.hint { font-size: 0.78rem; color: var(--text-3); margin-top: 1rem; }
 
 /* Quality bars */
 .qbar-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 0.82rem; }
-.qbar-label { width: 40px; color: #aaa; }
-.qbar-track { flex: 1; height: 14px; background: #2a2a2a; border-radius: 3px; overflow: hidden; }
+.qbar-label { width: 40px; color: var(--text-2); }
+.qbar-track { flex: 1; height: 14px; background: var(--bar-track); border-radius: 3px; overflow: hidden; }
 .qbar-fill { height: 100%; border-radius: 3px; transition: width 0.8s; }
 .qbar-720p { background: #2563eb; }
 .qbar-480p { background: #7c3aed; }
 .qbar-360p { background: #db2777; }
-.qbar-pct { width: 36px; text-align: right; color: #888; font-size: 0.78rem; }
+.qbar-pct { width: 36px; text-align: right; color: var(--text-3); font-size: 0.78rem; }
 
 /* Table */
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
-th { text-align: left; padding: 0.5rem 0.75rem; color: #666; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #2a2a2a; }
-td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #222; }
+th { text-align: left; padding: 0.5rem 0.75rem; color: var(--text-3); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
+td { padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--table-row-border); color: var(--text); }
 tr:last-child td { border-bottom: none; }
-#no-sessions { color: #555; font-size: 0.85rem; padding: 1rem 0; text-align: center; }
+#no-sessions { color: var(--text-3); font-size: 0.85rem; padding: 1rem 0; text-align: center; }
 </style>
 </head>
 <body>
 <header>
   <h1>QoE Dashboard</h1>
-  <nav>
-    <a href="/">← Library</a>
+  <div class="header-right">
     <div id="live-indicator">
       <div id="live-dot"></div>
       <span id="live-label">Connecting…</span>
     </div>
-  </nav>
+    <button id="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme"></button>
+    <nav><a href="/">← Library</a></nav>
+  </div>
 </header>
 <main>
   <div class="cards">
@@ -128,7 +154,7 @@ tr:last-child td { border-bottom: none; }
       <div class="panel-title">Throughput Health</div>
       <p style="font-size:0.9rem;margin-bottom:0.5rem;">Avg: <strong id="tp-avg">—</strong></p>
       <p style="font-size:0.9rem;">Worst 10%: <strong id="tp-p10">—</strong></p>
-      <p style="font-size:0.78rem;color:#555;margin-top:1rem;">Based on segment download measurements</p>
+      <p class="hint">Based on segment download measurements</p>
     </div>
   </div>
 
@@ -166,9 +192,7 @@ function setText(id, text, cls) {
   const el = document.getElementById(id);
   if (!el) return;
   el.textContent = text;
-  if (cls) {
-    el.className = 'card-value ' + cls;
-  }
+  if (cls) el.className = 'card-value ' + cls;
 }
 
 function updateDashboard(m) {
@@ -192,7 +216,6 @@ function updateDashboard(m) {
   setText('quality-switches', m.quality_switches_per_min ? m.quality_switches_per_min.toFixed(2) : '0.00');
   setText('active-live', m.active_live_streams != null ? m.active_live_streams : '0');
 
-  // Quality bars
   const dist = m.quality_distribution || {};
   ['720p', '480p', '360p'].forEach(q => {
     const pct = ((dist[q] || 0) * 100);
@@ -205,11 +228,10 @@ function updateDashboard(m) {
   document.getElementById('tp-avg').textContent = m.avg_throughput_mbps ? m.avg_throughput_mbps.toFixed(1) + ' Mbps' : '—';
   document.getElementById('tp-p10').textContent = m.p10_throughput_mbps ? m.p10_throughput_mbps.toFixed(1) + ' Mbps' : '—';
 
-  // Per-video table
   const tbody = document.getElementById('video-table-body');
   const videos = m.per_video || [];
   if (videos.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" id="no-sessions" style="color:#555;text-align:center;padding:1rem;">No active sessions</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" id="no-sessions" style="text-align:center;padding:1rem;">No active sessions</td></tr>';
   } else {
     tbody.innerHTML = videos.map(v => {
       const rebufPct = ((v.rebuffer_rate || 0) * 100).toFixed(1) + '%';
@@ -229,27 +251,18 @@ function escHtml(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// Connect to SSE stream
 const evtSource = new EventSource('/api/v1/dashboard/stats/stream');
-
-evtSource.onopen = () => {
-  dot.className = 'connected';
-  liveLabel.textContent = 'Live';
-};
-
+evtSource.onopen = () => { dot.className = 'connected'; liveLabel.textContent = 'Live'; };
 evtSource.onmessage = (event) => {
-  try {
-    const metrics = JSON.parse(event.data);
-    updateDashboard(metrics);
-  } catch (e) {
-    console.error('parse error', e);
-  }
+  try { updateDashboard(JSON.parse(event.data)); } catch (e) { console.error('parse error', e); }
 };
+evtSource.onerror = () => { dot.className = ''; liveLabel.textContent = 'Reconnecting…'; };
 
-evtSource.onerror = () => {
-  dot.className = '';
-  liveLabel.textContent = 'Reconnecting…';
-};
+const _MOON='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+const _SUN='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+function toggleTheme(){var h=document.documentElement,t=h.getAttribute('data-theme')==='dark'?'light':'dark';h.setAttribute('data-theme',t);localStorage.setItem('theme',t);_updateToggle();}
+function _updateToggle(){var isDark=document.documentElement.getAttribute('data-theme')==='dark',btn=document.getElementById('theme-toggle');if(btn)btn.innerHTML=isDark?_SUN:_MOON;}
+document.addEventListener('DOMContentLoaded',_updateToggle);
 </script>
 </body>
 </html>

@@ -12,6 +12,15 @@ type Profile struct {
 
 var defaultLadder = []Profile{
 	{
+		Name:         "1080p",
+		Width:        1920,
+		Height:       1080,
+		VideoBitrate: "5000k",
+		AudioBitrate: "192k",
+		MaxRate:      "5350k",
+		BufSize:      "7500k",
+	},
+	{
 		Name:         "720p",
 		Width:        1280,
 		Height:       720,
@@ -40,11 +49,17 @@ var defaultLadder = []Profile{
 	},
 }
 
-// BuildLadder returns profiles whose resolution does not exceed the source dimensions.
+// BuildLadder returns profiles whose short-side target does not exceed the source's short side.
+// This correctly handles both landscape and portrait sources.
 func BuildLadder(sourceWidth, sourceHeight int) []Profile {
+	sourceShortSide := sourceWidth
+	if sourceHeight < sourceShortSide {
+		sourceShortSide = sourceHeight
+	}
 	var result []Profile
 	for _, p := range defaultLadder {
-		if p.Width <= sourceWidth && p.Height <= sourceHeight {
+		// p.Height is the short-side target for all profiles (e.g. 1080, 720, 480, 360).
+		if p.Height <= sourceShortSide {
 			result = append(result, p)
 		}
 	}

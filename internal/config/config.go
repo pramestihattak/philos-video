@@ -14,6 +14,7 @@ type Config struct {
 	JWTSecret   string
 	JWTExpiry   string
 	RTMPPort    int
+	GoLivePin   string // GO_LIVE_PIN — if empty, /go-live is unprotected
 }
 
 func Load() (*Config, error) {
@@ -59,6 +60,9 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("invalid RTMP_PORT: %w", err)
 		}
 		cfg.RTMPPort = n
+	}
+	if v := os.Getenv("GO_LIVE_PIN"); v != "" {
+		cfg.GoLivePin = v
 	}
 
 	return cfg, nil

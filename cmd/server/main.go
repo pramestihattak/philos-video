@@ -107,12 +107,15 @@ func main() {
 	telemetryH := handler.NewTelemetryHandler(sessionRepo, eventRepo, aggregator)
 	dashboardH := handler.NewDashboardHandler(aggregator)
 	streamKeyH := handler.NewStreamKeyHandler(streamKeyRepo)
-	liveH := handler.NewLiveHandler(liveMgr, sessionSvc)
-	pageH, err := handler.NewPageHandler(videoSvc, liveMgr)
+	liveH := handler.NewLiveHandler(liveMgr, sessionSvc, sessionRepo)
+	pageH, err := handler.NewPageHandler(videoSvc, liveMgr, cfg.GoLivePin, cfg.JWTSecret)
 	if err != nil {
 		slog.Error("creating page handler", "err", err)
 		os.Exit(1)
 	}
+
+	goLiveGate := middleware.GoLivePinGate(cfg.GoLivePin, cfg.JWTSecret)
+	goLiveAPIGate := middleware.GoLivePinAPIGate(cfg.GoLivePin, cfg.JWTSecret)
 
 	mux := http.NewServeMux()
 
@@ -136,14 +139,15 @@ func main() {
 	mux.HandleFunc("GET /api/v1/dashboard/stats", dashboardH.GetStats)
 	mux.HandleFunc("GET /api/v1/dashboard/stats/stream", dashboardH.StatsStream)
 
-	// Stream key management (public — protect in production)
-	mux.HandleFunc("POST /api/v1/stream-keys", streamKeyH.Create)
-	mux.HandleFunc("GET /api/v1/stream-keys", streamKeyH.List)
-	mux.HandleFunc("DELETE /api/v1/stream-keys/{id}", streamKeyH.Deactivate)
+	// Stream key management (PIN-protected)
+	mux.Handle("POST /api/v1/stream-keys", goLiveAPIGate(http.HandlerFunc(streamKeyH.Create)))
+	mux.Handle("GET /api/v1/stream-keys", goLiveAPIGate(http.HandlerFunc(streamKeyH.List)))
+	mux.Handle("DELETE /api/v1/stream-keys/{id}", goLiveAPIGate(http.HandlerFunc(streamKeyH.Deactivate)))
 
 	// Live stream API (public)
 	mux.HandleFunc("GET /api/v1/live", liveH.ListLive)
 	mux.HandleFunc("GET /api/v1/live/{stream_id}", liveH.GetStream)
+	mux.HandleFunc("GET /api/v1/live/{stream_id}/viewers", liveH.Viewers)
 	mux.HandleFunc("POST /api/v1/live/{stream_id}/sessions", liveH.CreateSession)
 	mux.HandleFunc("POST /api/v1/live/{stream_id}/end", liveH.EndStream)
 
@@ -157,12 +161,14 @@ func main() {
 	liveHLSHandler := http.StripPrefix("/live/", noCacheHandler(mimeHandler(http.FileServer(http.Dir(liveDir)))))
 	mux.Handle("GET /live/", authMiddleware.RequireLiveToken(liveHLSHandler))
 
-	// Pages (public)
+	// Pages
 	mux.HandleFunc("GET /", pageH.Library)
 	mux.HandleFunc("GET /upload", pageH.Upload)
 	mux.HandleFunc("GET /dashboard", pageH.Dashboard)
 	mux.HandleFunc("GET /watch/{video_id}", pageH.Watch)
-	mux.HandleFunc("GET /go-live", pageH.GoLive)
+	mux.Handle("GET /go-live", goLiveGate(http.HandlerFunc(pageH.GoLive)))
+	mux.HandleFunc("GET /go-live/login", pageH.GoLiveLogin)
+	mux.HandleFunc("POST /go-live/login", pageH.GoLiveLoginPost)
 	mux.HandleFunc("GET /watch-live/{stream_id}", pageH.WatchLive)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)

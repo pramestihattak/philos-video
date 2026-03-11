@@ -4,19 +4,42 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{.Title}} — Live — Philos Video</title>
+<script>(function(){var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t)})();</script>
 <style>
+:root {
+  --bg: #f7f7f5; --surface: #ffffff; --surface2: #f1f1ee;
+  --border: #e6e6e1; --border2: #d0d0cb;
+  --text: #18181b; --text-2: #52525b; --text-3: #a1a1aa;
+  --link: #2563eb; --link-dim: #1d4ed8;
+  --player-bg: #111;
+  --overlay-bg: rgba(0,0,0,0.78);
+  --select-bg: #2a2a2a; --select-border: #444; --select-text: #e0e0e0;
+}
+[data-theme="dark"] {
+  --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #111;
+  --border: #2a2a2a; --border2: #3a3a3a;
+  --text: #e4e4e7; --text-2: #a1a1aa; --text-3: #52525b;
+  --link: #60a5fa; --link-dim: #93c5fd;
+  --player-bg: #0a0a0a;
+  --overlay-bg: rgba(0,0,0,0.75);
+  --select-bg: #2a2a2a; --select-border: #444; --select-text: #e0e0e0;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #0a0a0a; color: #e0e0e0; font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
-header { background: #1a1a1a; padding: 0.75rem 1.5rem; display: flex; align-items: center; gap: 1rem; border-bottom: 1px solid #333; flex-shrink: 0; }
-header a { color: #60a5fa; text-decoration: none; font-size: 0.875rem; white-space: nowrap; }
-header span { font-size: 0.9rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+header { background: var(--surface); padding: 0.75rem 1.5rem; display: flex; align-items: center; gap: 0.75rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+header a { color: var(--link); text-decoration: none; font-size: 0.875rem; white-space: nowrap; }
+header span.title { font-size: 0.9rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-badge { background: #dc2626; color: #fff; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; padding: 0.2rem 0.5rem; border-radius: 3px; text-transform: uppercase; flex-shrink: 0; }
-#player-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; position: relative; }
+#viewer-count { font-size: 0.82rem; color: var(--text-2); display: flex; align-items: center; gap: 0.3rem; flex-shrink: 0; }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; }
+#theme-toggle { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-2); flex-shrink: 0; padding: 0; }
+#theme-toggle:hover { background: var(--border2); }
+#player-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; position: relative; background: var(--player-bg); }
 video { max-width: 100%; max-height: calc(100vh - 120px); width: 100%; background: #000; border-radius: 6px; }
-#overlay { position: absolute; top: 60px; right: 1.5rem; background: rgba(0,0,0,0.75); color: #ccc; font-size: 0.72rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-family: monospace; line-height: 1.7; pointer-events: none; }
+#overlay { position: absolute; top: 60px; right: 1.5rem; background: var(--overlay-bg); color: #ccc; font-size: 0.72rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-family: monospace; line-height: 1.7; pointer-events: none; }
 #controls { margin-top: 0.75rem; display: flex; align-items: center; gap: 0.75rem; }
 #controls label { font-size: 0.8rem; color: #888; }
-#quality-select { background: #2a2a2a; color: #e0e0e0; border: 1px solid #444; border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem; }
+#quality-select { background: var(--select-bg); color: var(--select-text); border: 1px solid var(--select-border); border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.8rem; }
 #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 0.75rem; color: #888; font-size: 0.9rem; }
 .spinner { width: 36px; height: 36px; border: 3px solid #333; border-top-color: #dc2626; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -25,9 +48,16 @@ video { max-width: 100%; max-height: calc(100vh - 120px); width: 100%; backgroun
 <body>
 <header>
   <a href="/">← Library</a>
-  <span>{{.Title}}</span>
+  <span class="title">{{.Title}}</span>
   <span class="live-badge">LIVE</span>
-  <a href="/dashboard" style="margin-left:auto;font-size:0.8rem;color:#888;">Dashboard</a>
+  <span id="viewer-count" style="display:none;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    <span id="viewer-num">0</span>
+  </span>
+  <div class="header-right">
+    <button id="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme"></button>
+    <a href="/dashboard" style="font-size:0.8rem;color:var(--text-3);">Dashboard</a>
+  </div>
 </header>
 <div id="player-wrap">
   <div id="loading"><div class="spinner"></div><span>Connecting to live stream…</span></div>
@@ -108,27 +138,42 @@ async function initPlayer() {
     document.getElementById('ov-bw').textContent = lvl ? `${Math.round(lvl.bitrate / 1000)}kbps` : '—';
   });
 
-  // Buffer and latency overlay
   setInterval(() => {
     if (!video.buffered.length) return;
     const bufLen = Math.max(0, video.buffered.end(video.buffered.length - 1) - video.currentTime);
     document.getElementById('ov-buf').textContent = bufLen.toFixed(1);
-    // Live edge latency (seconds behind live)
     if (hls.liveSyncPosition) {
       const latency = hls.liveSyncPosition - video.currentTime;
       document.getElementById('ov-latency').textContent = Math.max(0, latency).toFixed(1);
     }
   }, 2000);
 
-  qualitySelect.addEventListener('change', () => {
-    hls.currentLevel = parseInt(qualitySelect.value, 10);
-  });
+  qualitySelect.addEventListener('change', () => { hls.currentLevel = parseInt(qualitySelect.value, 10); });
 
   hls.loadSource(MANIFEST);
   hls.attachMedia(video);
 }
 
 initPlayer();
+
+async function refreshViewers() {
+  try {
+    const res = await fetch(`/api/v1/live/${STREAM_ID}/viewers`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const el = document.getElementById('viewer-count');
+    document.getElementById('viewer-num').textContent = data.viewers;
+    el.style.display = 'flex';
+  } catch {}
+}
+refreshViewers();
+setInterval(refreshViewers, 10000);
+
+const _MOON='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+const _SUN='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+function toggleTheme(){var h=document.documentElement,t=h.getAttribute('data-theme')==='dark'?'light':'dark';h.setAttribute('data-theme',t);localStorage.setItem('theme',t);_updateToggle();}
+function _updateToggle(){var isDark=document.documentElement.getAttribute('data-theme')==='dark',btn=document.getElementById('theme-toggle');if(btn)btn.innerHTML=isDark?_SUN:_MOON;}
+document.addEventListener('DOMContentLoaded',_updateToggle);
 </script>
 </body>
 </html>

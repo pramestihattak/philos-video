@@ -27,6 +27,7 @@ type Video struct {
 	Duration  string    `json:"duration"`
 	Codec     string    `json:"codec"`
 	HLSPath   string    `json:"hls_path"`
+	PlayCount int       `json:"play_count"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

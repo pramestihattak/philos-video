@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Go Live — Philos Video</title>
+<script>(function(){var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t)})();</script>
+<style>
+:root {
+  --bg: #f7f7f5; --surface: #ffffff; --surface2: #f1f1ee;
+  --border: #e6e6e1; --border2: #d0d0cb;
+  --text: #18181b; --text-2: #52525b; --text-3: #a1a1aa;
+  --link: #2563eb;
+  --input-bg: #f7f7f5; --input-border: #d0d0cb;
+  --err-bg: #fee2e2; --err-border: #fca5a5; --err-text: #b91c1c;
+}
+[data-theme="dark"] {
+  --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #111;
+  --border: #2a2a2a; --border2: #3a3a3a;
+  --text: #e4e4e7; --text-2: #a1a1aa; --text-3: #52525b;
+  --link: #60a5fa;
+  --input-bg: #111; --input-border: #333;
+  --err-bg: #3b1a1a; --err-border: #5a2020; --err-text: #f87171;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
+header { background: var(--surface); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+header h1 { font-size: 1.2rem; font-weight: 600; }
+.header-right { display: flex; align-items: center; gap: 0.75rem; }
+header nav a { color: var(--link); text-decoration: none; font-size: 0.875rem; }
+#theme-toggle { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-2); flex-shrink: 0; padding: 0; }
+#theme-toggle:hover { background: var(--border2); }
+main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; width: 100%; max-width: 360px; box-shadow: 0 2px 16px rgba(0,0,0,0.06); }
+[data-theme="dark"] .card { box-shadow: none; }
+.card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+.card p { font-size: 0.82rem; color: var(--text-2); margin-bottom: 1.5rem; }
+label { font-size: 0.8rem; color: var(--text-2); display: block; margin-bottom: 0.4rem; }
+input[type="password"] { width: 100%; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 0.6rem 0.75rem; color: var(--text); font-size: 1rem; letter-spacing: 0.15em; margin-bottom: 1rem; }
+input[type="password"]:focus { outline: none; border-color: #2563eb; }
+button[type="submit"] { width: 100%; background: #dc2626; color: #fff; border: none; border-radius: 6px; padding: 0.65rem; font-size: 0.9rem; font-weight: 500; cursor: pointer; }
+button[type="submit"]:hover { background: #b91c1c; }
+.error { background: var(--err-bg); border: 1px solid var(--err-border); color: var(--err-text); border-radius: 6px; padding: 0.6rem 0.75rem; font-size: 0.82rem; margin-bottom: 1rem; display: {{if .Error}}block{{else}}none{{end}}; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Philos Video</h1>
+  <div class="header-right">
+    <button id="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme"></button>
+    <nav><a href="/">← Library</a></nav>
+  </div>
+</header>
+<main>
+  <div class="card">
+    <h2>&#9679; Go Live</h2>
+    <p>Enter your PIN to manage live streams.</p>
+    <div class="error">{{.Error}}</div>
+    <form method="POST" action="/go-live/login">
+      <label for="pin">PIN</label>
+      <input type="password" id="pin" name="pin" autofocus autocomplete="current-password" placeholder="••••••">
+      <button type="submit">Enter</button>
+    </form>
+  </div>
+</main>
+<script>
+const _MOON='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+const _SUN='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+function toggleTheme(){var h=document.documentElement,t=h.getAttribute('data-theme')==='dark'?'light':'dark';h.setAttribute('data-theme',t);localStorage.setItem('theme',t);_updateToggle();}
+function _updateToggle(){var isDark=document.documentElement.getAttribute('data-theme')==='dark',btn=document.getElementById('theme-toggle');if(btn)btn.innerHTML=isDark?_SUN:_MOON;}
+document.addEventListener('DOMContentLoaded',_updateToggle);
+</script>
+</body>
+</html>

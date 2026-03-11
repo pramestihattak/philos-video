@@ -7,16 +7,18 @@ import (
 
 	"philos-video/internal/live"
 	"philos-video/internal/models"
+	"philos-video/internal/repository"
 	"philos-video/internal/service"
 )
 
 type LiveHandler struct {
-	manager    *live.Manager
-	sessionSvc *service.SessionService
+	manager     *live.Manager
+	sessionSvc  *service.SessionService
+	sessionRepo *repository.SessionRepo
 }
 
-func NewLiveHandler(manager *live.Manager, sessionSvc *service.SessionService) *LiveHandler {
-	return &LiveHandler{manager: manager, sessionSvc: sessionSvc}
+func NewLiveHandler(manager *live.Manager, sessionSvc *service.SessionService, sessionRepo *repository.SessionRepo) *LiveHandler {
+	return &LiveHandler{manager: manager, sessionSvc: sessionSvc, sessionRepo: sessionRepo}
 }
 
 // GET /api/v1/live
@@ -87,6 +89,18 @@ func (h *LiveHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		"token_expires_at": expiresAt,
 		"telemetry_url":    telemetryURL,
 	})
+}
+
+// GET /api/v1/live/{stream_id}/viewers
+func (h *LiveHandler) Viewers(w http.ResponseWriter, r *http.Request) {
+	streamID := r.PathValue("stream_id")
+	count, err := h.sessionRepo.CountActiveByStreamID(r.Context(), streamID)
+	if err != nil {
+		http.Error(w, "failed to count viewers", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"viewers": count})
 }
 
 // POST /api/v1/live/{stream_id}/end

@@ -4,39 +4,67 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Philos Video — Upload</title>
+<script>(function(){var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t)})();</script>
 <style>
+:root {
+  --bg: #f7f7f5; --surface: #ffffff; --surface2: #f1f1ee;
+  --border: #e6e6e1; --border2: #d0d0cb;
+  --text: #18181b; --text-2: #52525b; --text-3: #a1a1aa;
+  --link: #2563eb; --link-dim: #1d4ed8;
+  --green: #16a34a;
+  --drop-border: #c8c8c2; --drop-hover-border: #2563eb; --drop-hover-bg: #eff6ff;
+  --progress-track: #e6e6e1;
+  --result-bg: #f0fdf4; --result-border: #bbf7d0; --result-text: #15803d;
+}
+[data-theme="dark"] {
+  --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #111;
+  --border: #2a2a2a; --border2: #3a3a3a;
+  --text: #e4e4e7; --text-2: #a1a1aa; --text-3: #52525b;
+  --link: #60a5fa; --link-dim: #93c5fd;
+  --green: #4ade80;
+  --drop-border: #444; --drop-hover-border: #60a5fa; --drop-hover-bg: #1a2a3a;
+  --progress-track: #2a2a2a;
+  --result-bg: #0a1a0a; --result-border: #1a3a1a; --result-text: #4ade80;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #0f0f0f; color: #e0e0e0; font-family: system-ui, sans-serif; min-height: 100vh; }
-header { background: #1a1a1a; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; min-height: 100vh; }
+header { background: var(--surface); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
 header h1 { font-size: 1.25rem; font-weight: 600; }
-header a { color: #60a5fa; text-decoration: none; font-size: 0.875rem; }
+.header-right { display: flex; gap: 0.75rem; align-items: center; }
+header a { color: var(--link); text-decoration: none; font-size: 0.875rem; }
+#theme-toggle { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-2); flex-shrink: 0; padding: 0; }
+#theme-toggle:hover { background: var(--border2); }
 main { max-width: 600px; margin: 4rem auto; padding: 0 1.5rem; }
 h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; }
 #drop-zone {
-  border: 2px dashed #444; border-radius: 12px; padding: 3rem 2rem;
+  border: 2px dashed var(--drop-border); border-radius: 12px; padding: 3rem 2rem;
   text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;
-  background: #1a1a1a;
+  background: var(--surface);
 }
-#drop-zone.drag-over { border-color: #60a5fa; background: #1a2a3a; }
+#drop-zone.drag-over { border-color: var(--drop-hover-border); background: var(--drop-hover-bg); }
 #drop-zone input[type=file] { display: none; }
 #drop-zone .icon { font-size: 3rem; margin-bottom: 1rem; }
-#drop-zone p { color: #888; font-size: 0.9rem; margin-top: 0.5rem; }
-#drop-zone .btn { display: inline-block; margin-top: 1rem; background: #2563eb; color: #fff; padding: 0.6rem 1.5rem; border-radius: 6px; font-size: 0.875rem; font-weight: 500; cursor: pointer; border: none; }
-#drop-zone .btn:hover { background: #1d4ed8; }
+#drop-zone p { color: var(--text-3); font-size: 0.9rem; margin-top: 0.5rem; }
+#drop-zone .btn { display: inline-block; margin-top: 1rem; background: var(--link); color: #fff; padding: 0.6rem 1.5rem; border-radius: 6px; font-size: 0.875rem; font-weight: 500; cursor: pointer; border: none; }
+#drop-zone .btn:hover { background: var(--link-dim); }
 #status { margin-top: 2rem; display: none; }
-#status-label { font-size: 0.9rem; color: #aaa; margin-bottom: 0.5rem; }
-#progress-bar { height: 8px; background: #2a2a2a; border-radius: 999px; overflow: hidden; }
-#progress-fill { height: 100%; background: #2563eb; border-radius: 999px; width: 0%; transition: width 0.3s; }
-#status-msg { margin-top: 0.75rem; font-size: 0.85rem; color: #888; }
+#status-label { font-size: 0.9rem; color: var(--text-2); margin-bottom: 0.5rem; }
+#progress-bar { height: 8px; background: var(--progress-track); border-radius: 999px; overflow: hidden; }
+#progress-fill { height: 100%; background: var(--link); border-radius: 999px; width: 0%; transition: width 0.3s; }
+#status-msg { margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-3); }
 #result { margin-top: 1.5rem; display: none; }
-#result a { background: #14532d; color: #4ade80; padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-weight: 500; display: inline-block; }
-#error-msg { margin-top: 1rem; color: #f87171; font-size: 0.875rem; display: none; }
+#result a { background: var(--result-bg); color: var(--result-text); border: 1px solid var(--result-border); padding: 0.75rem 1.5rem; border-radius: 8px; text-decoration: none; font-weight: 500; display: inline-block; }
+#error-msg { margin-top: 1rem; color: #dc2626; font-size: 0.875rem; display: none; }
+[data-theme="dark"] #error-msg { color: #f87171; }
 </style>
 </head>
 <body>
 <header>
   <h1>Philos Video</h1>
-  <a href="/">← Library</a>
+  <div class="header-right">
+    <button id="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme"></button>
+    <a href="/">← Library</a>
+  </div>
 </header>
 <main>
   <h2>Upload Video</h2>
@@ -46,7 +74,7 @@ h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; }
     <strong>Drag &amp; drop a video here</strong>
     <p>or</p>
     <button class="btn" onclick="document.getElementById('file-input').click()">Choose File</button>
-    <p id="file-name" style="margin-top:0.75rem;color:#ccc;"></p>
+    <p id="file-name" style="margin-top:0.75rem;color:var(--text-2);"></p>
   </div>
   <div id="status">
     <div id="status-label">Uploading…</div>
@@ -59,7 +87,7 @@ h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; }
   <div id="error-msg"></div>
 </main>
 <script>
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB
+const CHUNK_SIZE = 5 * 1024 * 1024;
 
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
@@ -79,9 +107,7 @@ dropZone.addEventListener('drop', e => {
   const file = e.dataTransfer.files[0];
   if (file) startUpload(file);
 });
-fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) startUpload(fileInput.files[0]);
-});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) startUpload(fileInput.files[0]); });
 
 function setProgress(pct, label, msg) {
   progressFill.style.width = pct + '%';
@@ -104,7 +130,6 @@ async function startUpload(file) {
 
   const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
 
-  // Init upload
   let uploadId;
   try {
     const res = await fetch('/api/v1/uploads', {
@@ -120,18 +145,12 @@ async function startUpload(file) {
     return;
   }
 
-  // Upload chunks sequentially
   for (let i = 0; i < totalChunks; i++) {
     const start = i * CHUNK_SIZE;
     const chunk = file.slice(start, start + CHUNK_SIZE);
-    const pct = Math.round((i / totalChunks) * 70);
-    setProgress(pct, `Uploading… chunk ${i + 1}/${totalChunks}`, '');
-
+    setProgress(Math.round((i / totalChunks) * 70), `Uploading… chunk ${i + 1}/${totalChunks}`, '');
     try {
-      const res = await fetch(`/api/v1/uploads/${uploadId}/chunks/${i}`, {
-        method: 'PUT',
-        body: chunk,
-      });
+      const res = await fetch(`/api/v1/uploads/${uploadId}/chunks/${i}`, { method: 'PUT', body: chunk });
       if (!res.ok) throw new Error('Chunk upload failed: ' + await res.text());
     } catch (e) {
       showError('Upload failed: ' + e.message);
@@ -140,40 +159,36 @@ async function startUpload(file) {
   }
 
   setProgress(75, 'Processing…', 'Video is being transcoded');
-
-  // Poll for completion
   watchLink.href = `/watch/${uploadId}`;
   let attempts = 0;
-  const maxAttempts = 600; // 10 minutes at 1s intervals
 
   const poll = async () => {
-    if (attempts++ > maxAttempts) {
-      showError('Timed out waiting for processing');
-      return;
-    }
+    if (attempts++ > 600) { showError('Timed out waiting for processing'); return; }
     try {
       const res = await fetch(`/api/v1/videos/${uploadId}/status`);
       if (!res.ok) { setTimeout(poll, 2000); return; }
       const s = await res.json();
       const status = s.video ? s.video.status : null;
-      const progress = s.progress || 0;
-
       if (status === 'ready') {
         setProgress(100, 'Ready!', 'Transcode complete');
         resultEl.style.display = 'block';
       } else if (status === 'failed') {
         showError('Transcode failed. Check server logs.');
       } else {
-        const pct = 75 + Math.round(progress * 25);
-        const stage = s.job ? (s.job.stage || 'processing') : 'processing';
-        setProgress(pct, 'Processing…', stage);
+        const pct = 75 + Math.round((s.progress || 0) * 25);
+        setProgress(pct, 'Processing…', s.job ? (s.job.stage || 'processing') : 'processing');
         setTimeout(poll, 1500);
       }
     } catch { setTimeout(poll, 2000); }
   };
-
   setTimeout(poll, 1000);
 }
+
+const _MOON='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+const _SUN='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+function toggleTheme(){var h=document.documentElement,t=h.getAttribute('data-theme')==='dark'?'light':'dark';h.setAttribute('data-theme',t);localStorage.setItem('theme',t);_updateToggle();}
+function _updateToggle(){var isDark=document.documentElement.getAttribute('data-theme')==='dark',btn=document.getElementById('theme-toggle');if(btn)btn.innerHTML=isDark?_SUN:_MOON;}
+document.addEventListener('DOMContentLoaded',_updateToggle);
 </script>
 </body>
 </html>

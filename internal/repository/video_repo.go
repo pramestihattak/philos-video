@@ -23,16 +23,24 @@ func (r *VideoRepo) Create(v *models.Video) error {
 	return err
 }
 
-func (r *VideoRepo) GetByID(id string) (*models.Video, error) {
+const videoSelect = `
+	SELECT v.id, v.title, v.status,
+	       COALESCE(v.width,0), COALESCE(v.height,0),
+	       COALESCE(v.duration,''), COALESCE(v.codec,''), COALESCE(v.hls_path,''),
+	       (SELECT COUNT(*) FROM playback_sessions ps WHERE ps.video_id = v.id),
+	       v.created_at, v.updated_at
+	FROM videos v`
+
+func scanVideo(s interface{ Scan(...any) error }) (*models.Video, error) {
 	v := &models.Video{}
-	err := r.db.QueryRow(
-		`SELECT id, title, status,
-		        COALESCE(width,0), COALESCE(height,0),
-		        COALESCE(duration,''), COALESCE(codec,''), COALESCE(hls_path,''),
-		        created_at, updated_at
-		 FROM videos WHERE id = $1`, id,
-	).Scan(&v.ID, &v.Title, &v.Status, &v.Width, &v.Height,
-		&v.Duration, &v.Codec, &v.HLSPath, &v.CreatedAt, &v.UpdatedAt)
+	err := s.Scan(&v.ID, &v.Title, &v.Status, &v.Width, &v.Height,
+		&v.Duration, &v.Codec, &v.HLSPath, &v.PlayCount, &v.CreatedAt, &v.UpdatedAt)
+	return v, err
+}
+
+func (r *VideoRepo) GetByID(id string) (*models.Video, error) {
+	row := r.db.QueryRow(videoSelect+` WHERE v.id = $1`, id)
+	v, err := scanVideo(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -40,13 +48,7 @@ func (r *VideoRepo) GetByID(id string) (*models.Video, error) {
 }
 
 func (r *VideoRepo) List() ([]*models.Video, error) {
-	rows, err := r.db.Query(
-		`SELECT id, title, status,
-		        COALESCE(width,0), COALESCE(height,0),
-		        COALESCE(duration,''), COALESCE(codec,''), COALESCE(hls_path,''),
-		        created_at, updated_at
-		 FROM videos ORDER BY created_at DESC`,
-	)
+	rows, err := r.db.Query(videoSelect + ` ORDER BY v.created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -54,9 +56,8 @@ func (r *VideoRepo) List() ([]*models.Video, error) {
 
 	var videos []*models.Video
 	for rows.Next() {
-		v := &models.Video{}
-		if err := rows.Scan(&v.ID, &v.Title, &v.Status, &v.Width, &v.Height,
-			&v.Duration, &v.Codec, &v.HLSPath, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		v, err := scanVideo(rows)
+		if err != nil {
 			return nil, err
 		}
 		videos = append(videos, v)

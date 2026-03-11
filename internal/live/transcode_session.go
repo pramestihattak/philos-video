@@ -64,9 +64,9 @@ func newTranscodeSession(streamID, dataDir string) (*transcodeSession, error) {
 
 	// Build FFmpeg arguments for multi-quality live HLS.
 	filterComplex := "[0:v]split=3[raw720][raw480][raw360];" +
-		"[raw720]scale=1280:720[v720];" +
-		"[raw480]scale=854:480[v480];" +
-		"[raw360]scale=640:360[v360]"
+		"[raw720]scale='if(gt(iw,ih),-2,min(720,iw))':'if(gt(iw,ih),min(720,ih),-2)'[v720];" +
+		"[raw480]scale='if(gt(iw,ih),-2,min(480,iw))':'if(gt(iw,ih),min(480,ih),-2)'[v480];" +
+		"[raw360]scale='if(gt(iw,ih),-2,min(360,iw))':'if(gt(iw,ih),min(360,ih),-2)'[v360]"
 
 	segPattern := filepath.Join(outputDir, "%v", "segment_%04d.ts")
 	outPattern := filepath.Join(outputDir, "%v", "playlist.m3u8")
