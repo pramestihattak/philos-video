@@ -1,4 +1,4 @@
-# Philos Video — Developer Documentation
+# MarpTube — Developer Documentation
 
 > **Overview & quick start:** [`../README.md`](../README.md)
 
@@ -1006,7 +1006,7 @@ The server port is **5433** (not 5432) to avoid conflicts with local Postgres in
 
 ```ini
 [Unit]
-Description=Philos Video Server
+Description=MarpTube Server
 After=network.target postgresql.service
 
 [Service]

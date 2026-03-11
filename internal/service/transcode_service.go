@@ -64,8 +64,20 @@ func (s *TranscodeService) Process(ctx context.Context, jobID string) error {
 	}
 	_ = s.videos.UpdateAfterProbe(video.ID, info.Width, info.Height, info.Duration, info.Codec)
 
-	// prepare (0.10)
+	// prepare (0.10) — remux to a clean 2-stream file before encoding.
+	// iPhone videos (and other Apple/camera sources) embed proprietary tracks:
+	// apac spatial audio, Dolby Vision RPU, mebx metadata, etc. FFmpeg
+	// allocates a codec context for every stream at startup, even ones excluded
+	// by -map. On a memory-constrained server the sum of those initializations
+	// plus the 4K decode buffer triggers the OOM killer before frame 1.
 	_ = s.jobs.UpdateProgress(jobID, "prepare", 0.10)
+	cleanPath := filepath.Join(rawDir, "clean.mp4")
+	slog.Info("remuxing clean input", "job_id", jobID)
+	if err := transcoder.RemuxClean(ctx, inputPath, cleanPath); err != nil {
+		return fmt.Errorf("remux: %w", err)
+	}
+	defer os.Remove(cleanPath)
+
 	profiles := transcoder.BuildLadder(info.Width, info.Height)
 	if len(profiles) == 0 {
 		return fmt.Errorf("no suitable profiles for %dx%d", info.Width, info.Height)
@@ -82,7 +94,7 @@ func (s *TranscodeService) Process(ctx context.Context, jobID string) error {
 		_ = s.jobs.UpdateProgress(jobID, "encode:"+p.Name, encProg)
 		slog.Info("encoding", "job_id", jobID, "profile", p.Name)
 
-		if err := transcoder.Encode(ctx, inputPath, hlsDir, p); err != nil {
+		if err := transcoder.Encode(ctx, cleanPath, hlsDir, p); err != nil {
 			return fmt.Errorf("encode [%s]: %w", p.Name, err)
 		}
 
