@@ -33,7 +33,6 @@ func (h *DashboardHandler) StatsStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Send current snapshot immediately
 	if data, err := json.Marshal(h.agg.GetMetrics()); err == nil {

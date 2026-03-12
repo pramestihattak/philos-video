@@ -2,11 +2,15 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 
 	"philos-video/internal/service"
 )
+
+// maxChunkSize is the maximum accepted size for a single chunk upload (256 MiB).
+const maxChunkSize = 256 << 20
 
 type UploadHandler struct {
 	svc *service.UploadService
@@ -19,6 +23,7 @@ func NewUploadHandler(svc *service.UploadService) *UploadHandler {
 // POST /api/v1/uploads
 // Body: {"filename": "video.mp4", "total_chunks": 5}
 func (h *UploadHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	var req struct {
 		Filename    string `json:"filename"`
 		TotalChunks int    `json:"total_chunks"`
@@ -34,7 +39,8 @@ func (h *UploadHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 
 	id, err := h.svc.InitUpload(r.Context(), req.Filename, req.TotalChunks)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("init upload", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -51,8 +57,11 @@ func (h *UploadHandler) ReceiveChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxChunkSize)
+
 	if err := h.svc.ReceiveChunk(r.Context(), uploadID, chunkNumber, r.Body); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("receive chunk", "upload_id", uploadID, "chunk", chunkNumber, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -64,7 +73,8 @@ func (h *UploadHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	uploadID := r.PathValue("upload_id")
 	received, total, err := h.svc.GetProgress(uploadID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("get upload progress", "upload_id", uploadID, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 

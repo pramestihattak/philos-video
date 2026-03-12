@@ -398,6 +398,9 @@ func (a *Aggregator) recalculate() *DashboardMetrics {
 }
 
 func (a *Aggregator) fetchTitle(videoID string) {
+	if a.videoRepo == nil {
+		return
+	}
 	if vid, _ := a.videoRepo.GetByID(videoID); vid != nil {
 		a.mu.Lock()
 		a.videoTitles[videoID] = vid.Title

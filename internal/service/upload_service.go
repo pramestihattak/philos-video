@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"philos-video/internal/models"
 	"philos-video/internal/repository"
@@ -101,7 +102,9 @@ func (s *UploadService) ReceiveChunk(ctx context.Context, uploadID string, chunk
 
 	if received == total {
 		go func() {
-			if err := s.assemble(context.Background(), uploadID, total); err != nil {
+			assembleCtx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+			defer cancel()
+			if err := s.assemble(assembleCtx, uploadID, total); err != nil {
 				slog.Error("assembly failed", "upload_id", uploadID, "err", err)
 				_ = s.videos.UpdateStatus(uploadID, models.VideoStatusFailed)
 			}
@@ -152,7 +155,9 @@ func (s *UploadService) assemble(ctx context.Context, uploadID string, totalChun
 	}
 	out.Close()
 
-	_ = os.RemoveAll(chunkDir)
+	if err := os.RemoveAll(chunkDir); err != nil {
+		slog.Warn("removing chunk dir", "path", chunkDir, "err", err)
+	}
 
 	jobID, err := generateID()
 	if err != nil {

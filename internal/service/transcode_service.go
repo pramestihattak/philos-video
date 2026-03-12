@@ -103,7 +103,9 @@ func (s *TranscodeService) Process(ctx context.Context, jobID string) error {
 		return fmt.Errorf("writing manifest: %w", err)
 	}
 
-	_ = os.RemoveAll(rawDir)
+	if err := os.RemoveAll(rawDir); err != nil {
+		slog.Warn("removing raw dir", "path", rawDir, "err", err)
+	}
 
 	hlsPath := filepath.Join("hls", video.ID)
 	_ = s.videos.UpdateHLSPath(video.ID, hlsPath)

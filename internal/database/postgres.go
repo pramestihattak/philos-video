@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -105,6 +106,9 @@ CREATE INDEX IF NOT EXISTS idx_live_streams_stream_key ON live_streams(stream_ke
 
 ALTER TABLE playback_sessions ADD COLUMN IF NOT EXISTS stream_id TEXT;
 ALTER TABLE playback_sessions ALTER COLUMN video_id DROP NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_playback_sessions_status_active ON playback_sessions(status, last_active_at);
+CREATE INDEX IF NOT EXISTS idx_playback_events_session_time    ON playback_events(session_id, timestamp);
 `
 
 func Connect(databaseURL string) (*sql.DB, error) {
@@ -112,6 +116,11 @@ func Connect(databaseURL string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
+
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}

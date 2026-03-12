@@ -3,10 +3,8 @@ version: "3.9"
 services:
   postgres:
     image: postgres:15
-    environment:
-      POSTGRES_DB: philos_video
-      POSTGRES_USER: philos
-      POSTGRES_PASSWORD: philos
+    env_file:
+      - .env.docker
     ports:
       - "5433:5432"
     volumes:

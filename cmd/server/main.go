@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"philos-video/internal/config"
 	"philos-video/internal/database"
@@ -39,13 +44,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 0o700: data dirs are private to the server process.
 	for _, dir := range []string{
 		filepath.Join(cfg.DataDir, "chunks"),
 		filepath.Join(cfg.DataDir, "raw"),
 		filepath.Join(cfg.DataDir, "hls"),
 		filepath.Join(cfg.DataDir, "live"),
 	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			slog.Error("creating data directory", "dir", dir, "err", err)
 			os.Exit(1)
 		}
@@ -62,7 +68,7 @@ func main() {
 
 	// Job channel + transcode workers
 	jobCh := make(chan string, 100)
-	videoSvc := service.NewVideoService(videoRepo, jobRepo)
+	videoSvc := service.NewVideoService(videoRepo, jobRepo, cfg.DataDir)
 	uploadSvc := service.NewUploadService(videoRepo, uploadRepo, jobRepo, cfg.DataDir, jobCh)
 	transcodeSvc := service.NewTranscodeService(videoRepo, jobRepo, cfg.DataDir)
 
@@ -100,6 +106,10 @@ func main() {
 	aggregator := qoe.New(videoRepo)
 	aggregator.SetLiveCounter(liveMgr)
 
+	// Rate limiters
+	uploadLimiter := middleware.NewIPRateLimiter(60, time.Minute)  // 60 uploads/min per IP
+	authLimiter := middleware.NewIPRateLimiter(20, time.Minute)    // 20 auth attempts/min per IP
+
 	// Handlers
 	uploadH := handler.NewUploadHandler(uploadSvc)
 	videoH := handler.NewVideoHandler(videoSvc)
@@ -119,8 +129,22 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Upload API (public)
-	mux.HandleFunc("POST /api/v1/uploads", uploadH.InitUpload)
+	// Health check
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		dbStatus := "ok"
+		httpStatus := http.StatusOK
+		if err := db.PingContext(r.Context()); err != nil {
+			slog.Warn("health check: DB ping failed", "err", err)
+			dbStatus = "unreachable"
+			httpStatus = http.StatusServiceUnavailable
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(httpStatus)
+		json.NewEncoder(w).Encode(map[string]string{"status": map[bool]string{true: "ok", false: "error"}[httpStatus == http.StatusOK], "db": dbStatus})
+	})
+
+	// Upload API — rate-limited
+	mux.Handle("POST /api/v1/uploads", uploadLimiter(http.HandlerFunc(uploadH.InitUpload)))
 	mux.HandleFunc("PUT /api/v1/uploads/{upload_id}/chunks/{chunk_number}", uploadH.ReceiveChunk)
 	mux.HandleFunc("GET /api/v1/uploads/{upload_id}/status", uploadH.GetStatus)
 
@@ -128,9 +152,10 @@ func main() {
 	mux.HandleFunc("GET /api/v1/videos", videoH.ListVideos)
 	mux.HandleFunc("GET /api/v1/videos/{id}", videoH.GetVideo)
 	mux.HandleFunc("GET /api/v1/videos/{id}/status", videoH.GetVideoStatus)
+	mux.HandleFunc("DELETE /api/v1/videos/{id}", videoH.DeleteVideo)
 
-	// VOD session creation (public — returns token)
-	mux.HandleFunc("POST /api/v1/videos/{id}/sessions", sessionH.CreateSession)
+	// VOD session creation — rate-limited
+	mux.Handle("POST /api/v1/videos/{id}/sessions", authLimiter(http.HandlerFunc(sessionH.CreateSession)))
 
 	// Telemetry (session-validated inside handler)
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/events", telemetryH.PostEvents)
@@ -148,7 +173,7 @@ func main() {
 	mux.HandleFunc("GET /api/v1/live", liveH.ListLive)
 	mux.HandleFunc("GET /api/v1/live/{stream_id}", liveH.GetStream)
 	mux.HandleFunc("GET /api/v1/live/{stream_id}/viewers", liveH.Viewers)
-	mux.HandleFunc("POST /api/v1/live/{stream_id}/sessions", liveH.CreateSession)
+	mux.Handle("POST /api/v1/live/{stream_id}/sessions", authLimiter(http.HandlerFunc(liveH.CreateSession)))
 	mux.HandleFunc("POST /api/v1/live/{stream_id}/end", liveH.EndStream)
 
 	// VOD HLS file serving — protected by JWT middleware
@@ -171,16 +196,38 @@ func main() {
 	mux.HandleFunc("POST /go-live/login", pageH.GoLiveLoginPost)
 	mux.HandleFunc("GET /watch-live/{stream_id}", pageH.WatchLive)
 
-	addr := fmt.Sprintf(":%d", cfg.Port)
-	slog.Info("server starting",
-		"addr", fmt.Sprintf("http://localhost%s", addr),
-		"rtmp", fmt.Sprintf("rtmp://localhost:%d/live", cfg.RTMPPort),
-	)
-
-	if err := http.ListenAndServe(addr, mux); err != nil {
-		slog.Error("server error", "err", err)
-		os.Exit(1)
+	srv := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.Port),
+		Handler: mux,
 	}
+
+	// Graceful shutdown on SIGTERM / SIGINT.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		slog.Info("server starting",
+			"addr", fmt.Sprintf("http://localhost:%d", cfg.Port),
+			"rtmp", fmt.Sprintf("rtmp://localhost:%d/live", cfg.RTMPPort),
+		)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("server error", "err", err)
+			os.Exit(1)
+		}
+	}()
+
+	<-ctx.Done()
+	slog.Info("shutdown signal received")
+
+	// End all live streams so FFmpeg writes #EXT-X-ENDLIST.
+	liveMgr.EndAllStreams()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("server shutdown", "err", err)
+	}
+	slog.Info("server stopped")
 }
 
 func mimeHandler(next http.Handler) http.Handler {

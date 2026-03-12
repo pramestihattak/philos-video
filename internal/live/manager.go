@@ -171,3 +171,19 @@ func (m *Manager) ActiveCount() int {
 	defer m.mu.RUnlock()
 	return len(m.sessions)
 }
+
+// EndAllStreams gracefully terminates every active live stream.
+// Call this during server shutdown to ensure #EXT-X-ENDLIST is written.
+func (m *Manager) EndAllStreams() {
+	m.mu.Lock()
+	ids := make([]string, 0, len(m.sessions))
+	for id := range m.sessions {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+
+	for _, id := range ids {
+		slog.Info("ending stream on shutdown", "stream_id", id)
+		m.EndStream(id)
+	}
+}

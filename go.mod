@@ -3,6 +3,7 @@ module philos-video
 go 1.22
 
 require (
+	github.com/caarlos0/env/v11 v11.4.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.0 // indirect
