@@ -7,7 +7,9 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sync"
+	"time"
 
+	"philos-video/internal/metrics"
 	"philos-video/internal/models"
 	"philos-video/internal/repository"
 )
@@ -20,8 +22,9 @@ type Manager struct {
 	videoRepo      *repository.VideoRepo
 	dataDir        string
 
-	mu       sync.RWMutex
-	sessions map[string]*transcodeSession // stream_id → session
+	mu         sync.RWMutex
+	sessions   map[string]*transcodeSession // stream_id → session
+	startTimes map[string]time.Time         // stream_id → start time
 }
 
 func NewManager(
@@ -36,6 +39,7 @@ func NewManager(
 		videoRepo:      videoRepo,
 		dataDir:        dataDir,
 		sessions:       make(map[string]*transcodeSession),
+		startTimes:     make(map[string]time.Time),
 	}
 }
 
@@ -43,9 +47,11 @@ func NewManager(
 func (m *Manager) StartStream(streamKey string) (*models.LiveStream, error) {
 	sk, err := m.streamKeyRepo.GetByID(streamKey)
 	if err != nil {
+		metrics.RTMPConnectionsTotal.WithLabelValues("rejected").Inc()
 		return nil, fmt.Errorf("looking up stream key: %w", err)
 	}
 	if sk == nil || !sk.IsActive {
+		metrics.RTMPConnectionsTotal.WithLabelValues("rejected").Inc()
 		return nil, fmt.Errorf("invalid or inactive stream key")
 	}
 
@@ -62,7 +68,11 @@ func (m *Manager) StartStream(streamKey string) (*models.LiveStream, error) {
 
 	m.mu.Lock()
 	m.sessions[stream.ID] = sess
+	m.startTimes[stream.ID] = time.Now()
 	m.mu.Unlock()
+
+	metrics.LiveStreamsActive.Inc()
+	metrics.RTMPConnectionsTotal.WithLabelValues("accepted").Inc()
 
 	if err := m.liveStreamRepo.UpdateStarted(stream.ID); err != nil {
 		slog.Warn("updating stream started", "stream_id", stream.ID, "err", err)
@@ -102,11 +112,19 @@ func (m *Manager) WriteAudio(streamID string, timestamp uint32, payload interfac
 func (m *Manager) EndStream(streamID string) {
 	m.mu.Lock()
 	sess := m.sessions[streamID]
+	startTime := m.startTimes[streamID]
 	delete(m.sessions, streamID)
+	delete(m.startTimes, streamID)
 	m.mu.Unlock()
 
 	if sess != nil {
 		sess.stop()
+	}
+
+	metrics.LiveStreamsActive.Dec()
+	metrics.LiveStreamsTotal.WithLabelValues("normal").Inc()
+	if !startTime.IsZero() {
+		metrics.LiveStreamDuration.Observe(time.Since(startTime).Seconds())
 	}
 
 	if err := m.liveStreamRepo.UpdateEnded(streamID); err != nil {
@@ -170,6 +188,19 @@ func (m *Manager) ActiveCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.sessions)
+}
+
+// GetPIDs returns a map of stream_id → FFmpeg process PID for all active sessions.
+func (m *Manager) GetPIDs() map[string]int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make(map[string]int, len(m.sessions))
+	for id, sess := range m.sessions {
+		if sess.cmd != nil && sess.cmd.Process != nil {
+			out[id] = sess.cmd.Process.Pid
+		}
+	}
+	return out
 }
 
 // EndAllStreams gracefully terminates every active live stream.

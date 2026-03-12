@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"philos-video/internal/metrics"
 	"philos-video/internal/models"
 	"philos-video/internal/repository"
 )
@@ -106,7 +107,12 @@ func (s *UploadService) ReceiveChunk(ctx context.Context, uploadID string, chunk
 			defer cancel()
 			if err := s.assemble(assembleCtx, uploadID, total); err != nil {
 				slog.Error("assembly failed", "upload_id", uploadID, "err", err)
+				metrics.UploadsTotal.WithLabelValues("failed").Inc()
+				metrics.ActiveUploads.Dec()
 				_ = s.videos.UpdateStatus(uploadID, models.VideoStatusFailed)
+			} else {
+				metrics.UploadsTotal.WithLabelValues("completed").Inc()
+				metrics.ActiveUploads.Dec()
 			}
 		}()
 	}

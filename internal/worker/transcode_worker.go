@@ -3,7 +3,9 @@ package worker
 import (
 	"context"
 	"log/slog"
+	"sync"
 
+	"philos-video/internal/metrics"
 	"philos-video/internal/models"
 	"philos-video/internal/repository"
 	"philos-video/internal/service"
@@ -14,6 +16,7 @@ type TranscodeWorker struct {
 	videos    *repository.VideoRepo
 	transcode *service.TranscodeService
 	jobCh     <-chan string
+	wg        sync.WaitGroup
 }
 
 func NewTranscodeWorker(
@@ -32,11 +35,18 @@ func NewTranscodeWorker(
 
 func (w *TranscodeWorker) Start(ctx context.Context, n int) {
 	for i := range n {
+		w.wg.Add(1)
 		go w.run(ctx, i)
 	}
 }
 
+// Wait blocks until all worker goroutines have finished.
+func (w *TranscodeWorker) Wait() {
+	w.wg.Wait()
+}
+
 func (w *TranscodeWorker) run(ctx context.Context, workerID int) {
+	defer w.wg.Done()
 	slog.Info("worker started", "worker_id", workerID)
 	for {
 		select {
@@ -45,16 +55,24 @@ func (w *TranscodeWorker) run(ctx context.Context, workerID int) {
 			return
 		case jobID, ok := <-w.jobCh:
 			if !ok {
+				slog.Info("worker channel closed", "worker_id", workerID)
 				return
 			}
 			slog.Info("processing job", "worker_id", workerID, "job_id", jobID)
+			metrics.TranscodeActiveWorkers.Inc()
+			metrics.TranscodeJobsTotal.WithLabelValues("started").Inc()
+
 			if err := w.transcode.Process(ctx, jobID); err != nil {
 				slog.Error("job failed", "worker_id", workerID, "job_id", jobID, "err", err)
+				metrics.TranscodeJobsTotal.WithLabelValues("failed").Inc()
 				_ = w.jobs.Fail(jobID, err.Error())
 				if job, _ := w.jobs.GetByID(jobID); job != nil {
 					_ = w.videos.UpdateStatus(job.VideoID, models.VideoStatusFailed)
 				}
+			} else {
+				metrics.TranscodeJobsTotal.WithLabelValues("completed").Inc()
 			}
+			metrics.TranscodeActiveWorkers.Dec()
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"time"
 
@@ -79,6 +80,39 @@ func (r *JobRepo) Fail(id, errMsg string) error {
 	_, err := r.db.Exec(
 		`UPDATE transcode_jobs SET status='failed', error=$1, updated_at=$2 WHERE id=$3`,
 		errMsg, time.Now(), id,
+	)
+	return err
+}
+
+// FindStuck returns jobs that have been in 'running' status for longer than d.
+func (r *JobRepo) FindStuck(ctx context.Context, d time.Duration) ([]*models.TranscodeJob, error) {
+	cutoff := time.Now().Add(-d)
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, video_id, status, COALESCE(stage,''), progress, COALESCE(error,''),
+		        created_at, updated_at
+		 FROM transcode_jobs WHERE status='running' AND updated_at < $1`, cutoff,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var jobs []*models.TranscodeJob
+	for rows.Next() {
+		j := &models.TranscodeJob{}
+		if err := rows.Scan(&j.ID, &j.VideoID, &j.Status, &j.Stage, &j.Progress, &j.Error,
+			&j.CreatedAt, &j.UpdatedAt); err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, j)
+	}
+	return jobs, rows.Err()
+}
+
+// ResetToQueued resets a job from 'running' back to 'queued' for retry.
+func (r *JobRepo) ResetToQueued(ctx context.Context, jobID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE transcode_jobs SET status='queued', stage=NULL, updated_at=$1 WHERE id=$2`,
+		time.Now(), jobID,
 	)
 	return err
 }

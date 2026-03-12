@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,14 +14,21 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"philos-video/internal/alerting"
 	"philos-video/internal/config"
 	"philos-video/internal/database"
 	"philos-video/internal/handler"
+	"philos-video/internal/health"
 	"philos-video/internal/live"
+	"philos-video/internal/logging"
+	"philos-video/internal/metrics"
 	"philos-video/internal/middleware"
 	"philos-video/internal/qoe"
 	"philos-video/internal/repository"
 	"philos-video/internal/service"
+	"philos-video/internal/watchdog"
 	"philos-video/internal/worker"
 )
 
@@ -32,12 +39,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Configure structured logging first.
+	logging.Setup(cfg.LogLevel, cfg.LogFormat)
+
 	db, err := database.Connect(cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("connecting to database", "err", err)
 		os.Exit(1)
 	}
-	defer db.Close()
 
 	if err := database.Migrate(db); err != nil {
 		slog.Error("running migrations", "err", err)
@@ -72,8 +81,10 @@ func main() {
 	uploadSvc := service.NewUploadService(videoRepo, uploadRepo, jobRepo, cfg.DataDir, jobCh)
 	transcodeSvc := service.NewTranscodeService(videoRepo, jobRepo, cfg.DataDir)
 
+	// Use a cancelable context for workers so they drain on shutdown.
+	workerCtx, workerCancel := context.WithCancel(context.Background())
 	w := worker.NewTranscodeWorker(jobRepo, videoRepo, transcodeSvc, jobCh)
-	w.Start(context.Background(), cfg.WorkerCount)
+	w.Start(workerCtx, cfg.WorkerCount)
 
 	queued, err := jobRepo.ListQueued()
 	if err != nil {
@@ -106,9 +117,18 @@ func main() {
 	aggregator := qoe.New(videoRepo)
 	aggregator.SetLiveCounter(liveMgr)
 
+	// Health checker
+	healthChecker := health.NewHealthChecker(db, cfg.DataDir, cfg.RTMPPort)
+
+	// Alert engine
+	alertEngine := alerting.NewEngine(aggregator)
+
+	// Watchdog
+	wd := watchdog.New(liveMgr, jobRepo, cfg.DataDir)
+
 	// Rate limiters
-	uploadLimiter := middleware.NewIPRateLimiter(60, time.Minute)  // 60 uploads/min per IP
-	authLimiter := middleware.NewIPRateLimiter(20, time.Minute)    // 20 auth attempts/min per IP
+	uploadLimiter := middleware.NewIPRateLimiter(60, time.Minute) // 60 uploads/min per IP
+	authLimiter := middleware.NewIPRateLimiter(20, time.Minute)   // 20 auth attempts/min per IP
 
 	// Handlers
 	uploadH := handler.NewUploadHandler(uploadSvc)
@@ -118,6 +138,8 @@ func main() {
 	dashboardH := handler.NewDashboardHandler(aggregator)
 	streamKeyH := handler.NewStreamKeyHandler(streamKeyRepo)
 	liveH := handler.NewLiveHandler(liveMgr, sessionSvc, sessionRepo)
+	healthH := handler.NewHealthHandler(healthChecker)
+	alertH := handler.NewAlertHandler(alertEngine)
 	pageH, err := handler.NewPageHandler(videoSvc, liveMgr, cfg.GoLivePin, cfg.JWTSecret)
 	if err != nil {
 		slog.Error("creating page handler", "err", err)
@@ -129,19 +151,12 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Health check
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		dbStatus := "ok"
-		httpStatus := http.StatusOK
-		if err := db.PingContext(r.Context()); err != nil {
-			slog.Warn("health check: DB ping failed", "err", err)
-			dbStatus = "unreachable"
-			httpStatus = http.StatusServiceUnavailable
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(httpStatus)
-		json.NewEncoder(w).Encode(map[string]string{"status": map[bool]string{true: "ok", false: "error"}[httpStatus == http.StatusOK], "db": dbStatus})
-	})
+	// Health checks
+	mux.HandleFunc("GET /health", healthH.Liveness)
+	mux.HandleFunc("GET /health/ready", healthH.Readiness)
+
+	// Prometheus metrics
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	// Upload API — rate-limited
 	mux.Handle("POST /api/v1/uploads", uploadLimiter(http.HandlerFunc(uploadH.InitUpload)))
@@ -163,6 +178,10 @@ func main() {
 	// Dashboard API (public, read-only)
 	mux.HandleFunc("GET /api/v1/dashboard/stats", dashboardH.GetStats)
 	mux.HandleFunc("GET /api/v1/dashboard/stats/stream", dashboardH.StatsStream)
+
+	// Alerts API
+	mux.HandleFunc("GET /api/v1/alerts/active", alertH.Active)
+	mux.HandleFunc("GET /api/v1/alerts/history", alertH.History)
 
 	// Stream key management (PIN-protected)
 	mux.Handle("POST /api/v1/stream-keys", goLiveAPIGate(http.HandlerFunc(streamKeyH.Create)))
@@ -196,14 +215,24 @@ func main() {
 	mux.HandleFunc("POST /go-live/login", pageH.GoLiveLoginPost)
 	mux.HandleFunc("GET /watch-live/{stream_id}", pageH.WatchLive)
 
+	// Wrap mux with request ID + metrics middleware globally.
+	rootHandler := middleware.RequestIDMiddleware(middleware.MetricsMiddleware(mux))
+
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Port),
-		Handler: mux,
+		Handler: rootHandler,
 	}
 
 	// Graceful shutdown on SIGTERM / SIGINT.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Start background services.
+	metrics.StartSystemCollector(ctx, cfg.DataDir, db)
+	alertEngine.Start(ctx, func() *alerting.SystemMetrics {
+		return buildSysMetrics(db, cfg.DataDir)
+	})
+	wd.Start(ctx)
 
 	go func() {
 		slog.Info("server starting",
@@ -227,7 +256,38 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server shutdown", "err", err)
 	}
+
+	// Drain transcode workers gracefully (60s timeout).
+	slog.Info("waiting for transcodes to finish")
+	workerCancel()
+	close(jobCh)
+	workerDone := make(chan struct{})
+	go func() {
+		w.Wait()
+		close(workerDone)
+	}()
+	select {
+	case <-workerDone:
+		slog.Info("transcodes complete")
+	case <-time.After(60 * time.Second):
+		slog.Warn("transcodes timeout — some jobs may be incomplete")
+	}
+
+	db.Close()
 	slog.Info("server stopped")
+}
+
+// buildSysMetrics samples system-level data for the alerting engine.
+func buildSysMetrics(db *sql.DB, dataDir string) *alerting.SystemMetrics {
+	sys := &alerting.SystemMetrics{}
+	sys.TranscodeQueueDepth = int(queueDepth(db))
+	return sys
+}
+
+func queueDepth(db *sql.DB) int64 {
+	var n int64
+	_ = db.QueryRow(`SELECT COUNT(*) FROM transcode_jobs WHERE status='queued'`).Scan(&n)
+	return n
 }
 
 func mimeHandler(next http.Handler) http.Handler {

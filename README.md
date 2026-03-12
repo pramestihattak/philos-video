@@ -14,6 +14,11 @@ A self-hosted video streaming platform written in Go. Supports chunked upload, s
 - **JWT playback auth** — signed tokens bound to specific video or stream IDs
 - **Telemetry pipeline** — client-side event collection (TTFF, rebuffer, quality switches, throughput)
 - **QoE dashboard** — live metrics via SSE: rebuffer rate, TTFF percentiles, bitrate distribution, throughput
+- **Prometheus metrics** — 35+ metrics across HTTP, upload, transcode, live, delivery, and QoE categories
+- **Grafana** — pre-wired via Docker Compose, connects to Prometheus out of the box
+- **Health checks** — `/health` (liveness) and `/health/ready` (postgres, ffmpeg, disk, RTMP port)
+- **Alert engine** — in-process rules for rebuffer rate, disk space, DB latency, queue depth, and more
+- **Graceful shutdown** — worker drain, live stream `#EXT-X-ENDLIST`, 60s transcode timeout
 
 ---
 
@@ -22,16 +27,36 @@ A self-hosted video streaming platform written in Go. Supports chunked upload, s
 ```bash
 # Requirements: Go 1.22+, FFmpeg, Docker
 
-make db       # start PostgreSQL in Docker
+make db       # start PostgreSQL + Prometheus + Grafana in Docker
 make serve    # start HTTP (:8080) + RTMP (:1935) server
-
-open http://localhost:8080          # video library
-open http://localhost:8080/upload   # upload a video
-open http://localhost:8080/go-live  # manage stream keys (OBS live streaming)
-open http://localhost:8080/dashboard
 ```
 
+Open in your browser:
+
+| URL | Purpose |
+|-----|---------|
+| `http://localhost:8080` | Video library |
+| `http://localhost:8080/upload` | Upload a video |
+| `http://localhost:8080/dashboard` | Live QoE dashboard |
+| `http://localhost:8080/go-live` | Manage stream keys (OBS) |
+| `http://localhost:8080/metrics` | Raw Prometheus metrics |
+| `http://localhost:8080/health` | Liveness probe |
+| `http://localhost:8080/health/ready` | Readiness probe (all deps) |
+| `http://localhost:9090` | Prometheus UI |
+| `http://localhost:3000` | Grafana (admin / admin) |
+
 Migrations run automatically on startup — no manual SQL needed.
+
+### Grafana setup
+
+1. `make db` starts Grafana at `http://localhost:3000`
+2. Log in with **admin / admin** (set `GF_SECURITY_ADMIN_PASSWORD` in `docker-compose.yml` to change)
+3. Add a data source: **Connections → Data sources → Add → Prometheus**
+   - URL: `http://prometheus:9090`
+   - Click **Save & test**
+4. Create dashboards or import a community dashboard (search Grafana.com for ID `11074` — Node Exporter Full is a good starting point; for custom video metrics, build panels using the `video_*` metric namespace)
+
+All `video_*` metrics are documented in `internal/metrics/metrics.go`.
 
 ---
 
@@ -62,6 +87,11 @@ OBS/Encoder ──┤   ├── Upload API    /api/v1/uploads/…
 | Live streaming | `internal/live` | RTMP server + per-stream FFmpeg sessions |
 | VOD transcoding | `internal/transcoder` | FFmpeg/FFprobe wrappers |
 | QoE | `internal/qoe` | In-memory 5-min sliding window metrics |
+| Metrics | `internal/metrics` | Prometheus metric definitions + system collector |
+| Health | `internal/health` | Liveness and readiness probes |
+| Alerting | `internal/alerting` | In-process alert rule engine |
+| Watchdog | `internal/watchdog` | FFmpeg process monitor + stuck-job recovery |
+| Logging | `internal/logging` | Structured slog setup + context-aware logger |
 
 ---
 
@@ -76,6 +106,8 @@ OBS/Encoder ──┤   ├── Upload API    /api/v1/uploads/…
 | `JWT_SECRET` | dev default | **Change in production** (min 32 chars) |
 | `JWT_EXPIRY` | `1h` | Playback token lifetime |
 | `RTMP_PORT` | `1935` | RTMP ingest port |
+| `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `LOG_FORMAT` | `text` | Log format: `text` or `json` |
 
 ---
 
@@ -83,8 +115,8 @@ OBS/Encoder ──┤   ├── Upload API    /api/v1/uploads/…
 
 | Target | Description |
 |--------|-------------|
-| `make db` | Start PostgreSQL via Docker Compose |
-| `make stop` | Stop PostgreSQL |
+| `make db` | Start PostgreSQL + Prometheus + Grafana via Docker Compose |
+| `make stop` | Stop all Docker services |
 | `make serve` | Run HTTP + RTMP server |
 | `make dev` | Live-reload dev server (uses `air` if available) |
 | `make build` | Compile binaries to `bin/` |

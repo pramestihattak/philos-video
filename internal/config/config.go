@@ -21,6 +21,8 @@ type Config struct {
 	JWTExpiry   string `env:"JWT_EXPIRY"   envDefault:"1h"`
 	RTMPPort    int    `env:"RTMP_PORT"    envDefault:"1935"`
 	GoLivePin   string `env:"GO_LIVE_PIN"`
+	LogLevel    string `env:"LOG_LEVEL"    envDefault:"info"`
+	LogFormat   string `env:"LOG_FORMAT"   envDefault:"text"`
 }
 
 func Load() (*Config, error) {

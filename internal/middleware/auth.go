@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"philos-video/internal/metrics"
 	"philos-video/internal/repository"
 	"philos-video/internal/service"
 )
@@ -32,22 +33,30 @@ func (m *AuthMiddleware) RequirePlaybackToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := r.URL.Query().Get("token")
 		if token == "" {
+			metrics.TokenValidationsTotal.WithLabelValues("missing").Inc()
 			http.Error(w, "missing token", http.StatusUnauthorized)
 			return
 		}
 
 		claims, err := m.sessionSvc.ParseToken(token)
 		if err != nil {
+			if strings.Contains(err.Error(), "expired") {
+				metrics.TokenValidationsTotal.WithLabelValues("expired").Inc()
+			} else {
+				metrics.TokenValidationsTotal.WithLabelValues("invalid").Inc()
+			}
 			http.Error(w, "invalid token", http.StatusForbidden)
 			return
 		}
 
 		requestedVideoID := extractVideoID(r.URL.Path)
 		if claims.VideoID != requestedVideoID {
+			metrics.TokenValidationsTotal.WithLabelValues("invalid").Inc()
 			http.Error(w, "token not valid for this video", http.StatusForbidden)
 			return
 		}
 
+		metrics.TokenValidationsTotal.WithLabelValues("valid").Inc()
 		go m.touchSession(claims.SessionID)
 
 		ctx := context.WithValue(r.Context(), claimsKey{}, claims)
@@ -60,22 +69,30 @@ func (m *AuthMiddleware) RequireLiveToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := r.URL.Query().Get("token")
 		if token == "" {
+			metrics.TokenValidationsTotal.WithLabelValues("missing").Inc()
 			http.Error(w, "missing token", http.StatusUnauthorized)
 			return
 		}
 
 		claims, err := m.sessionSvc.ParseToken(token)
 		if err != nil {
+			if strings.Contains(err.Error(), "expired") {
+				metrics.TokenValidationsTotal.WithLabelValues("expired").Inc()
+			} else {
+				metrics.TokenValidationsTotal.WithLabelValues("invalid").Inc()
+			}
 			http.Error(w, "invalid token", http.StatusForbidden)
 			return
 		}
 
 		requestedStreamID := extractStreamID(r.URL.Path)
 		if claims.StreamID != requestedStreamID {
+			metrics.TokenValidationsTotal.WithLabelValues("invalid").Inc()
 			http.Error(w, "token not valid for this stream", http.StatusForbidden)
 			return
 		}
 
+		metrics.TokenValidationsTotal.WithLabelValues("valid").Inc()
 		go m.touchSession(claims.SessionID)
 
 		ctx := context.WithValue(r.Context(), claimsKey{}, claims)

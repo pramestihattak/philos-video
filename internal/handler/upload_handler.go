@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"philos-video/internal/metrics"
 	"philos-video/internal/service"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // maxChunkSize is the maximum accepted size for a single chunk upload (256 MiB).
@@ -37,9 +39,13 @@ func (h *UploadHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	metrics.UploadsTotal.WithLabelValues("started").Inc()
+	metrics.ActiveUploads.Inc()
+
 	id, err := h.svc.InitUpload(r.Context(), req.Filename, req.TotalChunks)
 	if err != nil {
 		slog.Error("init upload", "err", err)
+		metrics.ActiveUploads.Dec()
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -59,11 +65,18 @@ func (h *UploadHandler) ReceiveChunk(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxChunkSize)
 
+	timer := prometheus.NewTimer(metrics.UploadChunkDuration)
+	if r.ContentLength > 0 {
+		metrics.UploadBytesTotal.Add(float64(r.ContentLength))
+	}
+
 	if err := h.svc.ReceiveChunk(r.Context(), uploadID, chunkNumber, r.Body); err != nil {
 		slog.Error("receive chunk", "upload_id", uploadID, "chunk", chunkNumber, "err", err)
+		timer.ObserveDuration()
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	timer.ObserveDuration()
 
 	w.WriteHeader(http.StatusNoContent)
 }
