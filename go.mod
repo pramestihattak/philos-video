@@ -1,8 +1,9 @@
 module philos-video
 
-go 1.23.0
+go 1.25.0
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/caarlos0/env/v11 v11.4.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -21,6 +22,7 @@ require (
 	github.com/yutopp/go-amf0 v0.1.0 // indirect
 	github.com/yutopp/go-rtmp v0.0.7 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 )

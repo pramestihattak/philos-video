@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Philos Video — Upload</title>
+<title>PramTube — Upload</title>
 <script>(function(){var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t)})();</script>
 <style>
 :root {
@@ -60,10 +60,12 @@ h2 { font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; }
 </head>
 <body>
 <header>
-  <h1>Philos Video</h1>
+  <h1>PramTube</h1>
   <div class="header-right">
     <button id="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme"></button>
+    {{if .User}}<span style="font-size:0.8rem;color:var(--text-2);">{{.User.Email}}</span>{{end}}
     <a href="/">← Library</a>
+    {{if .User}}<form method="POST" action="/auth/logout" style="display:inline;"><button type="submit" style="background:none;border:none;color:var(--link);font-size:0.875rem;cursor:pointer;padding:0;">Sign out</button></form>{{end}}
   </div>
 </header>
 <main>

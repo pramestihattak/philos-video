@@ -3,7 +3,6 @@ package config
 import (
 	"bufio"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -20,9 +19,20 @@ type Config struct {
 	JWTSecret   string `env:"JWT_SECRET"   envDefault:"dev-secret-change-in-production-min-32-chars!"`
 	JWTExpiry   string `env:"JWT_EXPIRY"   envDefault:"1h"`
 	RTMPPort    int    `env:"RTMP_PORT"    envDefault:"1935"`
-	GoLivePin   string `env:"GO_LIVE_PIN"`
 	LogLevel    string `env:"LOG_LEVEL"    envDefault:"info"`
 	LogFormat   string `env:"LOG_FORMAT"   envDefault:"text"`
+
+	// Google OAuth
+	GoogleClientID     string `env:"GOOGLE_CLIENT_ID"`
+	GoogleClientSecret string `env:"GOOGLE_CLIENT_SECRET"`
+	OAuthRedirectURL   string `env:"OAUTH_REDIRECT_URL"`
+
+	// Session cookie (signs the user-identity JWT stored in the browser cookie)
+	SessionCookieSecret string `env:"SESSION_COOKIE_SECRET"`
+	SessionCookieSecure bool   `env:"SESSION_COOKIE_SECURE" envDefault:"false"`
+
+	// Per-user upload quota (bytes). 0 = unlimited.
+	DefaultUploadQuotaBytes int64 `env:"DEFAULT_UPLOAD_QUOTA_BYTES" envDefault:"10737418240"`
 }
 
 func Load() (*Config, error) {
@@ -41,9 +51,18 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("JWT_SECRET must be set; refusing to start with insecure default")
 	}
 
-	// Warn if the broadcaster area is completely unprotected.
-	if cfg.GoLivePin == "" {
-		slog.Warn("GO_LIVE_PIN is not set — /go-live and stream-key API are publicly accessible")
+	// Google OAuth vars are mandatory.
+	if cfg.GoogleClientID == "" {
+		return nil, fmt.Errorf("GOOGLE_CLIENT_ID must be set")
+	}
+	if cfg.GoogleClientSecret == "" {
+		return nil, fmt.Errorf("GOOGLE_CLIENT_SECRET must be set")
+	}
+	if cfg.OAuthRedirectURL == "" {
+		return nil, fmt.Errorf("OAUTH_REDIRECT_URL must be set")
+	}
+	if len(cfg.SessionCookieSecret) < 32 {
+		return nil, fmt.Errorf("SESSION_COOKIE_SECRET must be at least 32 characters")
 	}
 
 	return cfg, nil

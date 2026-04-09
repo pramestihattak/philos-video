@@ -24,7 +24,7 @@ func scanLiveStream(row interface {
 	var sourceWidth, sourceHeight sql.NullInt64
 	var sourceCodec, sourceFPS, hlsPath, videoID sql.NullString
 	err := row.Scan(
-		&ls.ID, &ls.StreamKeyID, &ls.Title, &ls.Status,
+		&ls.ID, &ls.UserID, &ls.StreamKeyID, &ls.Title, &ls.Status, &ls.RecordVOD,
 		&sourceWidth, &sourceHeight, &sourceCodec, &sourceFPS,
 		&hlsPath, &videoID, &ls.StartedAt, &ls.EndedAt, &ls.CreatedAt,
 	)
@@ -52,11 +52,11 @@ func scanLiveStream(row interface {
 	return ls, nil
 }
 
-const liveStreamCols = `id, stream_key_id, title, status,
+const liveStreamCols = `id, user_id, stream_key_id, title, status, record_vod,
     source_width, source_height, source_codec, source_fps,
     hls_path, video_id, started_at, ended_at, created_at`
 
-func (r *LiveStreamRepo) Create(streamKeyID, title string) (*models.LiveStream, error) {
+func (r *LiveStreamRepo) Create(streamKeyID, title string, recordVOD bool, userID string) (*models.LiveStream, error) {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		return nil, fmt.Errorf("generating stream id: %w", err)
@@ -64,9 +64,9 @@ func (r *LiveStreamRepo) Create(streamKeyID, title string) (*models.LiveStream, 
 	id := "ls_" + hex.EncodeToString(b)
 
 	row := r.db.QueryRow(
-		`INSERT INTO live_streams (id, stream_key_id, title) VALUES ($1, $2, $3)
+		`INSERT INTO live_streams (id, user_id, stream_key_id, title, record_vod) VALUES ($1, $2, $3, $4, $5)
 		 RETURNING `+liveStreamCols,
-		id, streamKeyID, title,
+		id, userID, streamKeyID, title, recordVOD,
 	)
 	ls, err := scanLiveStream(row)
 	if err != nil {
@@ -75,6 +75,7 @@ func (r *LiveStreamRepo) Create(streamKeyID, title string) (*models.LiveStream, 
 	return ls, nil
 }
 
+// GetByID is unscoped — used by public viewer paths and RTMP lifecycle callbacks.
 func (r *LiveStreamRepo) GetByID(id string) (*models.LiveStream, error) {
 	row := r.db.QueryRow(
 		`SELECT `+liveStreamCols+` FROM live_streams WHERE id = $1`, id,
@@ -85,6 +86,21 @@ func (r *LiveStreamRepo) GetByID(id string) (*models.LiveStream, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("getting live stream: %w", err)
+	}
+	return ls, nil
+}
+
+// GetByIDForUser returns a stream only if it belongs to the given user.
+func (r *LiveStreamRepo) GetByIDForUser(id, userID string) (*models.LiveStream, error) {
+	row := r.db.QueryRow(
+		`SELECT `+liveStreamCols+` FROM live_streams WHERE id = $1 AND user_id = $2`, id, userID,
+	)
+	ls, err := scanLiveStream(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting live stream for user: %w", err)
 	}
 	return ls, nil
 }

@@ -17,13 +17,14 @@ const (
 )
 
 type VideoService struct {
-	videos  *repository.VideoRepo
-	jobs    *repository.JobRepo
-	dataDir string
+	videos   *repository.VideoRepo
+	jobs     *repository.JobRepo
+	userRepo *repository.UserRepo
+	dataDir  string
 }
 
-func NewVideoService(videos *repository.VideoRepo, jobs *repository.JobRepo, dataDir string) *VideoService {
-	return &VideoService{videos: videos, jobs: jobs, dataDir: dataDir}
+func NewVideoService(videos *repository.VideoRepo, jobs *repository.JobRepo, userRepo *repository.UserRepo, dataDir string) *VideoService {
+	return &VideoService{videos: videos, jobs: jobs, userRepo: userRepo, dataDir: dataDir}
 }
 
 type VideoStatus struct {
@@ -36,14 +37,18 @@ func (s *VideoService) GetVideo(id string) (*models.Video, error) {
 	return s.videos.GetByID(id)
 }
 
-func (s *VideoService) ListVideos(limit, offset int) ([]*models.Video, error) {
+// ListVideos returns videos for a user (owner-scoped) or public/unlisted videos if userID is empty.
+func (s *VideoService) ListVideos(limit, offset int, userID string) ([]*models.Video, error) {
 	if limit <= 0 {
 		limit = DefaultVideoPageLimit
 	}
 	if limit > MaxVideoPageLimit {
 		limit = MaxVideoPageLimit
 	}
-	return s.videos.List(limit, offset)
+	if userID == "" {
+		return s.videos.ListPublic(limit, offset)
+	}
+	return s.videos.List(limit, offset, userID)
 }
 
 func (s *VideoService) GetVideoStatus(id string) (*VideoStatus, error) {
@@ -67,18 +72,25 @@ func (s *VideoService) GetVideoStatus(id string) (*VideoStatus, error) {
 	return vs, nil
 }
 
-// DeleteVideo removes a video record and its HLS files on disk.
-func (s *VideoService) DeleteVideo(_ context.Context, id string) error {
-	v, err := s.videos.GetByID(id)
+// DeleteVideo removes a video and its HLS files. Requires the owning userID.
+func (s *VideoService) DeleteVideo(ctx context.Context, id, userID string) error {
+	v, err := s.videos.GetByIDForUser(id, userID)
 	if err != nil {
 		return fmt.Errorf("looking up video: %w", err)
 	}
 	if v == nil {
-		return nil // already gone
+		return nil // not found or not owner — silent no-op
 	}
 
-	if err := s.videos.Delete(id); err != nil {
+	if err := s.videos.Delete(id, userID); err != nil {
 		return fmt.Errorf("deleting from database: %w", err)
+	}
+
+	// Decrement quota usage.
+	if v.SizeBytes > 0 && v.UserID != "" {
+		if err := s.userRepo.DecUsedBytes(ctx, v.UserID, v.SizeBytes); err != nil {
+			slog.Warn("decrementing user used_bytes", "user_id", v.UserID, "err", err)
+		}
 	}
 
 	hlsDir := filepath.Join(s.dataDir, "hls", id)
@@ -86,6 +98,17 @@ func (s *VideoService) DeleteVideo(_ context.Context, id string) error {
 		slog.Warn("removing HLS dir after delete", "path", hlsDir, "err", err)
 	}
 
-	slog.Info("video deleted", "video_id", id)
+	slog.Info("video deleted", "video_id", id, "user_id", userID)
 	return nil
+}
+
+// UpdateVisibility changes the video's visibility, scoped to its owner.
+func (s *VideoService) UpdateVisibility(ctx context.Context, id, userID, visibility string) error {
+	switch visibility {
+	case models.VisibilityPrivate, models.VisibilityUnlisted, models.VisibilityPublic:
+		// valid
+	default:
+		return fmt.Errorf("invalid visibility %q", visibility)
+	}
+	return s.videos.UpdateVisibility(id, userID, visibility)
 }

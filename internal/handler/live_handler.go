@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"philos-video/internal/live"
+	"philos-video/internal/middleware"
 	"philos-video/internal/models"
 	"philos-video/internal/repository"
 	"philos-video/internal/service"
@@ -104,8 +105,21 @@ func (h *LiveHandler) Viewers(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /api/v1/live/{stream_id}/end
+// Requires the signed-in user to be the stream owner.
 func (h *LiveHandler) EndStream(w http.ResponseWriter, r *http.Request) {
+	user := middleware.CurrentUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
 	streamID := r.PathValue("stream_id")
+
+	stream, err := h.manager.GetStream(streamID)
+	if err != nil || stream == nil || stream.UserID != user.ID {
+		http.NotFound(w, r)
+		return
+	}
+
 	h.manager.EndStream(streamID)
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -1,4 +1,4 @@
-# Philos Video — Codebase Context Skill
+# PramTube — Codebase Context Skill
 
 ## Overview
 Self-hosted Go video streaming platform (Go 1.22). Supports VOD upload/transcode, JWT-protected HLS delivery, RTMP live ingest, and a real-time QoE dashboard.

@@ -2,13 +2,16 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 
-	"philos-video/internal/metrics"
-	"philos-video/internal/service"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"philos-video/internal/metrics"
+	"philos-video/internal/middleware"
+	"philos-video/internal/service"
 )
 
 // maxChunkSize is the maximum accepted size for a single chunk upload (256 MiB).
@@ -23,12 +26,19 @@ func NewUploadHandler(svc *service.UploadService) *UploadHandler {
 }
 
 // POST /api/v1/uploads
-// Body: {"filename": "video.mp4", "total_chunks": 5}
+// Body: {"filename": "video.mp4", "total_chunks": 5, "expected_size": 104857600}
 func (h *UploadHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
+	user := middleware.CurrentUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	var req struct {
-		Filename    string `json:"filename"`
-		TotalChunks int    `json:"total_chunks"`
+		Filename     string `json:"filename"`
+		TotalChunks  int    `json:"total_chunks"`
+		ExpectedSize int64  `json:"expected_size"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -42,10 +52,15 @@ func (h *UploadHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 	metrics.UploadsTotal.WithLabelValues("started").Inc()
 	metrics.ActiveUploads.Inc()
 
-	id, err := h.svc.InitUpload(r.Context(), req.Filename, req.TotalChunks)
+	id, err := h.svc.InitUpload(r.Context(), user, req.Filename, req.TotalChunks, req.ExpectedSize)
 	if err != nil {
-		slog.Error("init upload", "err", err)
 		metrics.ActiveUploads.Dec()
+		var qe interface{ HTTPStatus() int }
+		if errors.As(err, &qe) {
+			http.Error(w, "upload quota exceeded", qe.HTTPStatus())
+			return
+		}
+		slog.Error("init upload", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

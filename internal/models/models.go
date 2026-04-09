@@ -8,6 +8,10 @@ const (
 	VideoStatusReady      = "ready"
 	VideoStatusFailed     = "failed"
 
+	VisibilityPrivate  = "private"
+	VisibilityUnlisted = "unlisted"
+	VisibilityPublic   = "public"
+
 	JobStatusQueued    = "queued"
 	JobStatusRunning   = "running"
 	JobStatusCompleted = "completed"
@@ -19,17 +23,20 @@ const (
 )
 
 type Video struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Status    string    `json:"status"`
-	Width     int       `json:"width"`
-	Height    int       `json:"height"`
-	Duration  string    `json:"duration"`
-	Codec     string    `json:"codec"`
-	HLSPath   string    `json:"hls_path"`
-	PlayCount int       `json:"play_count"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         string    `json:"id"`
+	UserID     string    `json:"user_id,omitempty"`
+	Title      string    `json:"title"`
+	Visibility string    `json:"visibility"`
+	Status     string    `json:"status"`
+	Width      int       `json:"width"`
+	Height     int       `json:"height"`
+	Duration   string    `json:"duration"`
+	Codec      string    `json:"codec"`
+	HLSPath    string    `json:"hls_path"`
+	SizeBytes  int64     `json:"size_bytes,omitempty"`
+	PlayCount  int       `json:"play_count"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type UploadChunk struct {
@@ -65,16 +72,20 @@ type PlaybackSession struct {
 
 type StreamKey struct {
 	ID        string    `json:"id"`
+	UserID    string    `json:"user_id,omitempty"`
 	UserLabel string    `json:"user_label"`
 	IsActive  bool      `json:"is_active"`
+	RecordVOD bool      `json:"record_vod"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type LiveStream struct {
 	ID           string     `json:"id"`
+	UserID       string     `json:"user_id,omitempty"`
 	StreamKeyID  string     `json:"stream_key_id"`
 	Title        string     `json:"title"`
 	Status       string     `json:"status"`
+	RecordVOD    bool       `json:"record_vod"`
 	SourceWidth  int        `json:"source_width,omitempty"`
 	SourceHeight int        `json:"source_height,omitempty"`
 	SourceCodec  string     `json:"source_codec,omitempty"`

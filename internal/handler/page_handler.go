@@ -7,48 +7,68 @@ import (
 
 	"philos-video/internal/live"
 	"philos-video/internal/middleware"
+	"philos-video/internal/models"
 	"philos-video/internal/service"
 	"philos-video/internal/web"
 )
 
 type PageHandler struct {
-	videoSvc  *service.VideoService
-	liveMgr   *live.Manager
-	tmpl      *template.Template
-	goLivePin string
-	jwtSecret string
+	videoSvc *service.VideoService
+	liveMgr  *live.Manager
+	tmpl     *template.Template
 }
 
-func NewPageHandler(videoSvc *service.VideoService, liveMgr *live.Manager, goLivePin, jwtSecret string) (*PageHandler, error) {
+func NewPageHandler(videoSvc *service.VideoService, liveMgr *live.Manager) (*PageHandler, error) {
 	tmpl, err := template.ParseFS(web.Templates, "templates/*.html")
 	if err != nil {
 		return nil, err
 	}
 	return &PageHandler{
-		videoSvc:  videoSvc,
-		liveMgr:   liveMgr,
-		tmpl:      tmpl,
-		goLivePin: goLivePin,
-		jwtSecret: jwtSecret,
+		videoSvc: videoSvc,
+		liveMgr:  liveMgr,
+		tmpl:     tmpl,
 	}, nil
+}
+
+// GET /login
+func (h *PageHandler) Login(w http.ResponseWriter, r *http.Request) {
+	// If already signed in, redirect to home.
+	if user := middleware.CurrentUser(r.Context()); user != nil {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	returnURL := loginReturnURL(r)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	h.tmpl.ExecuteTemplate(w, "login.html", map[string]string{
+		"ReturnURL": returnURL,
+	})
 }
 
 // GET /
 func (h *PageHandler) Library(w http.ResponseWriter, r *http.Request) {
+	user := middleware.CurrentUser(r.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	h.tmpl.ExecuteTemplate(w, "library.html", nil)
+	h.tmpl.ExecuteTemplate(w, "library.html", map[string]any{
+		"User": user,
+	})
 }
 
 // GET /upload
 func (h *PageHandler) Upload(w http.ResponseWriter, r *http.Request) {
+	user := middleware.CurrentUser(r.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	h.tmpl.ExecuteTemplate(w, "upload.html", nil)
+	h.tmpl.ExecuteTemplate(w, "upload.html", map[string]any{
+		"User": user,
+	})
 }
 
 // GET /dashboard
 func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
+	user := middleware.CurrentUser(r.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	h.tmpl.ExecuteTemplate(w, "dashboard.html", nil)
+	h.tmpl.ExecuteTemplate(w, "dashboard.html", map[string]any{
+		"User": user,
+	})
 }
 
 // GET /watch/{video_id}
@@ -58,6 +78,15 @@ func (h *PageHandler) Watch(w http.ResponseWriter, r *http.Request) {
 	if err != nil || video == nil {
 		http.NotFound(w, r)
 		return
+	}
+
+	// Private videos require the signed-in owner.
+	if video.Visibility == models.VisibilityPrivate {
+		user := middleware.CurrentUser(r.Context())
+		if user == nil || user.ID != video.UserID {
+			http.Redirect(w, r, "/login?return=/watch/"+videoID, http.StatusFound)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -70,8 +99,11 @@ func (h *PageHandler) Watch(w http.ResponseWriter, r *http.Request) {
 
 // GET /go-live
 func (h *PageHandler) GoLive(w http.ResponseWriter, r *http.Request) {
+	user := middleware.CurrentUser(r.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	h.tmpl.ExecuteTemplate(w, "go_live.html", nil)
+	h.tmpl.ExecuteTemplate(w, "go_live.html", map[string]any{
+		"User": user,
+	})
 }
 
 // GET /watch-live/{stream_id}
@@ -88,27 +120,4 @@ func (h *PageHandler) WatchLive(w http.ResponseWriter, r *http.Request) {
 		"StreamID": streamID,
 		"Title":    stream.Title,
 	})
-}
-
-// GET /go-live/login
-func (h *PageHandler) GoLiveLogin(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	h.tmpl.ExecuteTemplate(w, "go_live_login.html", map[string]string{"Error": ""})
-}
-
-// POST /go-live/login
-func (h *PageHandler) GoLiveLoginPost(w http.ResponseWriter, r *http.Request) {
-	if h.goLivePin == "" {
-		http.Redirect(w, r, "/go-live", http.StatusFound)
-		return
-	}
-	pin := r.FormValue("pin")
-	if pin != h.goLivePin {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusUnauthorized)
-		h.tmpl.ExecuteTemplate(w, "go_live_login.html", map[string]string{"Error": "Incorrect PIN."})
-		return
-	}
-	middleware.SetGoLiveCookie(w, h.goLivePin, h.jwtSecret)
-	http.Redirect(w, r, "/go-live", http.StatusFound)
 }

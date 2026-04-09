@@ -6,7 +6,7 @@ const PlayerHTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Philos Video Player</title>
+  <title>PramTube Player</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }

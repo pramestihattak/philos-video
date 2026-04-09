@@ -55,7 +55,7 @@ func (m *Manager) StartStream(streamKey string) (*models.LiveStream, error) {
 		return nil, fmt.Errorf("invalid or inactive stream key")
 	}
 
-	stream, err := m.liveStreamRepo.Create(sk.ID, sk.UserLabel)
+	stream, err := m.liveStreamRepo.Create(sk.ID, sk.UserLabel, sk.RecordVOD, sk.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("creating live stream record: %w", err)
 	}
@@ -131,7 +131,16 @@ func (m *Manager) EndStream(streamID string) {
 		slog.Warn("marking stream ended", "stream_id", streamID, "err", err)
 	}
 
-	go m.convertToVOD(streamID)
+	stream, err := m.liveStreamRepo.GetByID(streamID)
+	if err != nil {
+		slog.Warn("fetching stream for VOD decision", "stream_id", streamID, "err", err)
+		return
+	}
+	if stream != nil && stream.RecordVOD {
+		go m.convertToVOD(streamID)
+	} else {
+		slog.Info("stream ended without recording (record_vod=false)", "stream_id", streamID)
+	}
 }
 
 func (m *Manager) convertToVOD(streamID string) {
@@ -149,9 +158,11 @@ func (m *Manager) convertToVOD(streamID string) {
 	videoID := hex.EncodeToString(b)
 
 	v := &models.Video{
-		ID:     videoID,
-		Title:  stream.Title + " (Recording)",
-		Status: models.VideoStatusReady,
+		ID:         videoID,
+		UserID:     stream.UserID,
+		Title:      stream.Title + " (Recording)",
+		Visibility: models.VisibilityPrivate,
+		Status:     models.VideoStatusReady,
 	}
 	if err := m.videoRepo.Create(v); err != nil {
 		slog.Error("creating VOD video", "err", err)

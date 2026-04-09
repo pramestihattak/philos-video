@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"philos-video/internal/middleware"
 	"philos-video/internal/models"
 	"philos-video/internal/repository"
 )
@@ -18,15 +19,27 @@ func NewStreamKeyHandler(repo *repository.StreamKeyRepo) *StreamKeyHandler {
 
 // POST /api/v1/stream-keys
 func (h *StreamKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
+	user := middleware.CurrentUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
 	var req struct {
-		Label string `json:"label"`
+		Label     string `json:"label"`
+		RecordVOD *bool  `json:"record_vod"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Label == "" {
 		http.Error(w, "label required", http.StatusBadRequest)
 		return
 	}
 
-	sk, err := h.repo.Create(req.Label)
+	recordVOD := true
+	if req.RecordVOD != nil {
+		recordVOD = *req.RecordVOD
+	}
+
+	sk, err := h.repo.Create(req.Label, recordVOD, user.ID)
 	if err != nil {
 		http.Error(w, "failed to create stream key", http.StatusInternalServerError)
 		return
@@ -39,7 +52,13 @@ func (h *StreamKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v1/stream-keys
 func (h *StreamKeyHandler) List(w http.ResponseWriter, r *http.Request) {
-	keys, err := h.repo.List()
+	user := middleware.CurrentUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	keys, err := h.repo.List(user.ID)
 	if err != nil {
 		http.Error(w, "failed to list stream keys", http.StatusInternalServerError)
 		return
@@ -53,9 +72,36 @@ func (h *StreamKeyHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // DELETE /api/v1/stream-keys/{id}
 func (h *StreamKeyHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
+	user := middleware.CurrentUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
 	id := r.PathValue("id")
-	if err := h.repo.Deactivate(id); err != nil {
+	if err := h.repo.Deactivate(id, user.ID); err != nil {
 		http.Error(w, "failed to deactivate stream key", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// PATCH /api/v1/stream-keys/{id}
+func (h *StreamKeyHandler) Update(w http.ResponseWriter, r *http.Request) {
+	user := middleware.CurrentUser(r.Context())
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	id := r.PathValue("id")
+	var req struct {
+		RecordVOD *bool `json:"record_vod"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RecordVOD == nil {
+		http.Error(w, "record_vod required", http.StatusBadRequest)
+		return
+	}
+	if err := h.repo.UpdateRecordVOD(id, *req.RecordVOD, user.ID); err != nil {
+		http.Error(w, "failed to update stream key", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

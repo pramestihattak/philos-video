@@ -67,6 +67,7 @@ func main() {
 	}
 
 	// Repositories
+	userRepo := repository.NewUserRepo(db)
 	videoRepo := repository.NewVideoRepo(db)
 	uploadRepo := repository.NewUploadRepo(db)
 	jobRepo := repository.NewJobRepo(db)
@@ -77,8 +78,8 @@ func main() {
 
 	// Job channel + transcode workers
 	jobCh := make(chan string, 100)
-	videoSvc := service.NewVideoService(videoRepo, jobRepo, cfg.DataDir)
-	uploadSvc := service.NewUploadService(videoRepo, uploadRepo, jobRepo, cfg.DataDir, jobCh)
+	videoSvc := service.NewVideoService(videoRepo, jobRepo, userRepo, cfg.DataDir)
+	uploadSvc := service.NewUploadService(videoRepo, uploadRepo, jobRepo, userRepo, cfg.DataDir, jobCh)
 	transcodeSvc := service.NewTranscodeService(videoRepo, jobRepo, cfg.DataDir)
 
 	// Use a cancelable context for workers so they drain on shutdown.
@@ -96,13 +97,27 @@ func main() {
 		}
 	}
 
-	// Session service + auth middleware
+	// Session service + HLS playback auth middleware
 	sessionSvc, err := service.NewSessionService(sessionRepo, videoRepo, cfg.JWTSecret, cfg.JWTExpiry)
 	if err != nil {
 		slog.Error("creating session service", "err", err)
 		os.Exit(1)
 	}
 	authMiddleware := middleware.NewAuthMiddleware(sessionSvc, sessionRepo)
+
+	// User session service (browser cookie JWT)
+	userSessionSvc, err := service.NewUserSessionService(cfg.SessionCookieSecret, cfg.SessionCookieSecure)
+	if err != nil {
+		slog.Error("creating user session service", "err", err)
+		os.Exit(1)
+	}
+	userAuthMW := middleware.NewUserAuthMiddleware(userSessionSvc, userRepo)
+	requireUser := userAuthMW.RequireUser
+	requireUserAPI := userAuthMW.RequireUserAPI
+	optionalUser := userAuthMW.OptionalUser
+
+	// OAuth service
+	oauthSvc := service.NewOAuthService(cfg)
 
 	// Live stream manager + RTMP server
 	liveMgr := live.NewManager(streamKeyRepo, liveStreamRepo, videoRepo, cfg.DataDir)
@@ -131,6 +146,7 @@ func main() {
 	authLimiter := middleware.NewIPRateLimiter(20, time.Minute)   // 20 auth attempts/min per IP
 
 	// Handlers
+	authH := handler.NewAuthHandler(oauthSvc, userSessionSvc, userRepo, cfg.DefaultUploadQuotaBytes)
 	uploadH := handler.NewUploadHandler(uploadSvc)
 	videoH := handler.NewVideoHandler(videoSvc)
 	sessionH := handler.NewSessionHandler(sessionSvc)
@@ -140,14 +156,11 @@ func main() {
 	liveH := handler.NewLiveHandler(liveMgr, sessionSvc, sessionRepo)
 	healthH := handler.NewHealthHandler(healthChecker)
 	alertH := handler.NewAlertHandler(alertEngine)
-	pageH, err := handler.NewPageHandler(videoSvc, liveMgr, cfg.GoLivePin, cfg.JWTSecret)
+	pageH, err := handler.NewPageHandler(videoSvc, liveMgr)
 	if err != nil {
 		slog.Error("creating page handler", "err", err)
 		os.Exit(1)
 	}
-
-	goLiveGate := middleware.GoLivePinGate(cfg.GoLivePin, cfg.JWTSecret)
-	goLiveAPIGate := middleware.GoLivePinAPIGate(cfg.GoLivePin, cfg.JWTSecret)
 
 	mux := http.NewServeMux()
 
@@ -158,19 +171,26 @@ func main() {
 	// Prometheus metrics
 	mux.Handle("GET /metrics", promhttp.Handler())
 
-	// Upload API — rate-limited
-	mux.Handle("POST /api/v1/uploads", uploadLimiter(http.HandlerFunc(uploadH.InitUpload)))
-	mux.HandleFunc("PUT /api/v1/uploads/{upload_id}/chunks/{chunk_number}", uploadH.ReceiveChunk)
-	mux.HandleFunc("GET /api/v1/uploads/{upload_id}/status", uploadH.GetStatus)
+	// OAuth + session
+	mux.HandleFunc("GET /auth/google/login", authH.GoogleLogin)
+	mux.HandleFunc("GET /auth/google/callback", authH.GoogleCallback)
+	mux.HandleFunc("POST /auth/logout", authH.Logout)
+	mux.Handle("GET /api/v1/me", optionalUser(http.HandlerFunc(authH.Me)))
 
-	// Video API (public)
-	mux.HandleFunc("GET /api/v1/videos", videoH.ListVideos)
-	mux.HandleFunc("GET /api/v1/videos/{id}", videoH.GetVideo)
-	mux.HandleFunc("GET /api/v1/videos/{id}/status", videoH.GetVideoStatus)
-	mux.HandleFunc("DELETE /api/v1/videos/{id}", videoH.DeleteVideo)
+	// Upload API — requires login + rate-limited
+	mux.Handle("POST /api/v1/uploads", uploadLimiter(requireUserAPI(http.HandlerFunc(uploadH.InitUpload))))
+	mux.Handle("PUT /api/v1/uploads/{upload_id}/chunks/{chunk_number}", requireUserAPI(http.HandlerFunc(uploadH.ReceiveChunk)))
+	mux.Handle("GET /api/v1/uploads/{upload_id}/status", requireUserAPI(http.HandlerFunc(uploadH.GetStatus)))
 
-	// VOD session creation — rate-limited
-	mux.Handle("POST /api/v1/videos/{id}/sessions", authLimiter(http.HandlerFunc(sessionH.CreateSession)))
+	// Video API
+	mux.Handle("GET /api/v1/videos", optionalUser(http.HandlerFunc(videoH.ListVideos)))
+	mux.Handle("GET /api/v1/videos/{id}", optionalUser(http.HandlerFunc(videoH.GetVideo)))
+	mux.Handle("GET /api/v1/videos/{id}/status", optionalUser(http.HandlerFunc(videoH.GetVideoStatus)))
+	mux.Handle("DELETE /api/v1/videos/{id}", requireUserAPI(http.HandlerFunc(videoH.DeleteVideo)))
+	mux.Handle("PATCH /api/v1/videos/{id}", requireUserAPI(http.HandlerFunc(videoH.UpdateVideo)))
+
+	// VOD session creation — rate-limited (public for non-private videos)
+	mux.Handle("POST /api/v1/videos/{id}/sessions", authLimiter(optionalUser(http.HandlerFunc(sessionH.CreateSession))))
 
 	// Telemetry (session-validated inside handler)
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/events", telemetryH.PostEvents)
@@ -183,17 +203,18 @@ func main() {
 	mux.HandleFunc("GET /api/v1/alerts/active", alertH.Active)
 	mux.HandleFunc("GET /api/v1/alerts/history", alertH.History)
 
-	// Stream key management (PIN-protected)
-	mux.Handle("POST /api/v1/stream-keys", goLiveAPIGate(http.HandlerFunc(streamKeyH.Create)))
-	mux.Handle("GET /api/v1/stream-keys", goLiveAPIGate(http.HandlerFunc(streamKeyH.List)))
-	mux.Handle("DELETE /api/v1/stream-keys/{id}", goLiveAPIGate(http.HandlerFunc(streamKeyH.Deactivate)))
+	// Stream key management (requires login)
+	mux.Handle("POST /api/v1/stream-keys", requireUserAPI(http.HandlerFunc(streamKeyH.Create)))
+	mux.Handle("GET /api/v1/stream-keys", requireUserAPI(http.HandlerFunc(streamKeyH.List)))
+	mux.Handle("DELETE /api/v1/stream-keys/{id}", requireUserAPI(http.HandlerFunc(streamKeyH.Deactivate)))
+	mux.Handle("PATCH /api/v1/stream-keys/{id}", requireUserAPI(http.HandlerFunc(streamKeyH.Update)))
 
-	// Live stream API (public)
+	// Live stream API
 	mux.HandleFunc("GET /api/v1/live", liveH.ListLive)
 	mux.HandleFunc("GET /api/v1/live/{stream_id}", liveH.GetStream)
 	mux.HandleFunc("GET /api/v1/live/{stream_id}/viewers", liveH.Viewers)
 	mux.Handle("POST /api/v1/live/{stream_id}/sessions", authLimiter(http.HandlerFunc(liveH.CreateSession)))
-	mux.HandleFunc("POST /api/v1/live/{stream_id}/end", liveH.EndStream)
+	mux.Handle("POST /api/v1/live/{stream_id}/end", requireUserAPI(http.HandlerFunc(liveH.EndStream)))
 
 	// VOD HLS file serving — protected by JWT middleware
 	hlsDir := filepath.Join(cfg.DataDir, "hls")
@@ -205,14 +226,13 @@ func main() {
 	liveHLSHandler := http.StripPrefix("/live/", noCacheHandler(mimeHandler(http.FileServer(http.Dir(liveDir)))))
 	mux.Handle("GET /live/", authMiddleware.RequireLiveToken(liveHLSHandler))
 
-	// Pages
-	mux.HandleFunc("GET /", pageH.Library)
-	mux.HandleFunc("GET /upload", pageH.Upload)
-	mux.HandleFunc("GET /dashboard", pageH.Dashboard)
-	mux.HandleFunc("GET /watch/{video_id}", pageH.Watch)
-	mux.Handle("GET /go-live", goLiveGate(http.HandlerFunc(pageH.GoLive)))
-	mux.HandleFunc("GET /go-live/login", pageH.GoLiveLogin)
-	mux.HandleFunc("POST /go-live/login", pageH.GoLiveLoginPost)
+	// Pages — inject user into context; protected pages use RequireUser middleware
+	mux.Handle("GET /login", optionalUser(http.HandlerFunc(pageH.Login)))
+	mux.Handle("GET /", optionalUser(http.HandlerFunc(pageH.Library)))
+	mux.Handle("GET /upload", requireUser(http.HandlerFunc(pageH.Upload)))
+	mux.Handle("GET /dashboard", requireUser(http.HandlerFunc(pageH.Dashboard)))
+	mux.Handle("GET /watch/{video_id}", optionalUser(http.HandlerFunc(pageH.Watch)))
+	mux.Handle("GET /go-live", requireUser(http.HandlerFunc(pageH.GoLive)))
 	mux.HandleFunc("GET /watch-live/{stream_id}", pageH.WatchLive)
 
 	// Wrap mux with request ID + metrics middleware globally.
@@ -230,7 +250,7 @@ func main() {
 	// Start background services.
 	metrics.StartSystemCollector(ctx, cfg.DataDir, db)
 	alertEngine.Start(ctx, func() *alerting.SystemMetrics {
-		return buildSysMetrics(db, cfg.DataDir)
+		return buildSysMetrics(db)
 	})
 	wd.Start(ctx)
 
@@ -278,7 +298,7 @@ func main() {
 }
 
 // buildSysMetrics samples system-level data for the alerting engine.
-func buildSysMetrics(db *sql.DB, dataDir string) *alerting.SystemMetrics {
+func buildSysMetrics(db *sql.DB) *alerting.SystemMetrics {
 	sys := &alerting.SystemMetrics{}
 	sys.TranscodeQueueDepth = int(queueDepth(db))
 	return sys

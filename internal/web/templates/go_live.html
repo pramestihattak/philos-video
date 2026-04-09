@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Go Live — Philos Video</title>
+<title>Go Live — PramTube</title>
 <script>(function(){var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t)})();</script>
 <style>
 :root {
@@ -45,11 +45,14 @@ label { font-size: 0.82rem; color: var(--text-2); display: block; margin-bottom:
 label:first-of-type { margin-top: 0; }
 input, select { width: 100%; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 0.5rem 0.75rem; color: var(--text); font-size: 0.9rem; }
 input:focus, select:focus { outline: none; border-color: var(--link); }
-.key-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
-.key-row .key-id { font-family: monospace; font-size: 0.8rem; color: var(--key-id-text); flex: 1; background: var(--key-id-bg); padding: 0.4rem 0.6rem; border-radius: 4px; border: 1px solid var(--border); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.key-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.key-row .key-id { font-family: monospace; font-size: 0.8rem; color: var(--key-id-text); flex: 1; background: var(--key-id-bg); padding: 0.4rem 0.6rem; border-radius: 4px; border: 1px solid var(--border); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .key-row .key-label { color: var(--text-2); font-size: 0.78rem; min-width: 80px; }
 .key-row button { background: var(--key-btn-bg); color: var(--key-btn-text); border: 1px solid var(--key-btn-border); border-radius: 4px; padding: 0.3rem 0.6rem; font-size: 0.75rem; cursor: pointer; }
 .key-row button:hover { background: var(--key-btn-hover); }
+.record-toggle { display: flex; align-items: center; gap: 0.3rem; font-size: 0.75rem; color: var(--text-2); white-space: nowrap; }
+.record-toggle input[type=checkbox] { width: auto; accent-color: #2563eb; cursor: pointer; }
+.record-toggle label { cursor: pointer; margin: 0; }
 .rtmp-info { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1rem; font-family: monospace; font-size: 0.82rem; color: var(--code-text); margin-top: 0.5rem; }
 .btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.55rem 1.2rem; border-radius: 6px; font-size: 0.875rem; font-weight: 500; cursor: pointer; border: none; }
 .btn-primary { background: #2563eb; color: #fff; }
@@ -65,7 +68,9 @@ code { color: var(--code-text); font-family: monospace; }
   <h1>Go Live</h1>
   <div class="header-right">
     <button id="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme"></button>
+    {{if .User}}<span style="font-size:0.8rem;color:var(--text-2);">{{.User.Email}}</span>{{end}}
     <nav><a href="/">← Library</a></nav>
+    {{if .User}}<form method="POST" action="/auth/logout" style="display:inline;"><button type="submit" style="background:none;border:none;color:var(--link);font-size:0.875rem;cursor:pointer;padding:0;">Sign out</button></form>{{end}}
   </div>
 </header>
 <main>
@@ -77,6 +82,10 @@ code { color: var(--code-text); font-family: monospace; }
       <div style="flex:1;min-width:180px;">
         <label for="new-key-label">Label for new key</label>
         <input id="new-key-label" type="text" placeholder="e.g. Main stream" maxlength="80">
+      </div>
+      <div style="display:flex;align-items:center;gap:0.4rem;padding-bottom:0.1rem;">
+        <input id="new-key-record" type="checkbox" checked style="width:auto;accent-color:#2563eb;cursor:pointer;">
+        <label for="new-key-record" style="font-size:0.82rem;color:var(--text-2);margin:0;cursor:pointer;">Record stream</label>
       </div>
       <button class="btn btn-primary" onclick="createKey()">Create Key</button>
     </div>
@@ -106,6 +115,11 @@ async function loadKeys() {
     <div class="key-row">
       <span class="key-label">${escHtml(k.user_label)}</span>
       <span class="key-id" title="${escHtml(k.id)}">${escHtml(k.id)}</span>
+      <span class="record-toggle">
+        <input type="checkbox" id="rec-${escHtml(k.id)}" ${k.record_vod ? 'checked' : ''}
+          onchange="toggleRecord('${escHtml(k.id)}', this.checked)">
+        <label for="rec-${escHtml(k.id)}">Record</label>
+      </span>
       <button onclick="deactivate('${escHtml(k.id)}')">Revoke</button>
     </div>
   `).join('');
@@ -114,12 +128,15 @@ async function loadKeys() {
 async function createKey() {
   const label = document.getElementById('new-key-label').value.trim();
   if (!label) { alert('Enter a label'); return; }
+  const recordVOD = document.getElementById('new-key-record').checked;
   const res = await fetch('/api/v1/stream-keys', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label, record_vod: recordVOD }),
   });
   if (!res.ok) { alert('Failed to create key'); return; }
   const sk = await res.json();
   document.getElementById('new-key-label').value = '';
+  document.getElementById('new-key-record').checked = true;
   const result = document.getElementById('create-result');
   result.textContent = `Created: ${sk.id}`;
   result.style.display = 'block';
@@ -130,6 +147,17 @@ async function deactivate(id) {
   if (!confirm('Revoke this stream key?')) return;
   await fetch(`/api/v1/stream-keys/${id}`, { method: 'DELETE' });
   loadKeys();
+}
+
+async function toggleRecord(id, enabled) {
+  const res = await fetch(`/api/v1/stream-keys/${id}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ record_vod: enabled }),
+  });
+  if (!res.ok) {
+    alert('Failed to update setting');
+    loadKeys(); // revert UI
+  }
 }
 
 function escHtml(s) {

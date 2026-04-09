@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -17,26 +18,29 @@ import (
 )
 
 type UploadService struct {
-	videos  *repository.VideoRepo
-	uploads *repository.UploadRepo
-	jobs    *repository.JobRepo
-	dataDir string
-	jobCh   chan<- string
+	videos   *repository.VideoRepo
+	uploads  *repository.UploadRepo
+	jobs     *repository.JobRepo
+	userRepo *repository.UserRepo
+	dataDir  string
+	jobCh    chan<- string
 }
 
 func NewUploadService(
 	videos *repository.VideoRepo,
 	uploads *repository.UploadRepo,
 	jobs *repository.JobRepo,
+	userRepo *repository.UserRepo,
 	dataDir string,
 	jobCh chan<- string,
 ) *UploadService {
 	return &UploadService{
-		videos:  videos,
-		uploads: uploads,
-		jobs:    jobs,
-		dataDir: dataDir,
-		jobCh:   jobCh,
+		videos:   videos,
+		uploads:  uploads,
+		jobs:     jobs,
+		userRepo: userRepo,
+		dataDir:  dataDir,
+		jobCh:    jobCh,
 	}
 }
 
@@ -48,16 +52,32 @@ func generateID() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (s *UploadService) InitUpload(ctx context.Context, filename string, totalChunks int) (string, error) {
+// InitUpload creates a video record and chunk slots. It enforces the per-user
+// quota using the reported expectedSize (bytes). Pass 0 to skip the quota
+// check (e.g. for chunked uploads where size is unknown upfront).
+func (s *UploadService) InitUpload(ctx context.Context, user *models.User, filename string, totalChunks int, expectedSize int64) (string, error) {
+	// Quota check.
+	if expectedSize > 0 {
+		ok, err := s.userRepo.HasQuotaFor(ctx, user.ID, expectedSize)
+		if err != nil {
+			return "", fmt.Errorf("checking quota: %w", err)
+		}
+		if !ok {
+			return "", ErrQuotaExceeded
+		}
+	}
+
 	id, err := generateID()
 	if err != nil {
 		return "", fmt.Errorf("generating ID: %w", err)
 	}
 
 	video := &models.Video{
-		ID:     id,
-		Title:  filename,
-		Status: models.VideoStatusUploading,
+		ID:         id,
+		UserID:     user.ID,
+		Title:      filename,
+		Visibility: models.VisibilityPrivate,
+		Status:     models.VideoStatusUploading,
 	}
 	if err := s.videos.Create(video); err != nil {
 		return "", fmt.Errorf("creating video record: %w", err)
@@ -72,9 +92,17 @@ func (s *UploadService) InitUpload(ctx context.Context, filename string, totalCh
 		return "", fmt.Errorf("creating chunk dir: %w", err)
 	}
 
-	slog.Info("upload initialized", "upload_id", id, "filename", filename, "total_chunks", totalChunks)
+	slog.Info("upload initialized", "upload_id", id, "filename", filename, "total_chunks", totalChunks, "user_id", user.ID)
 	return id, nil
 }
+
+// ErrQuotaExceeded is returned when a user's upload quota would be exceeded.
+var ErrQuotaExceeded = &quotaError{}
+
+type quotaError struct{}
+
+func (e *quotaError) Error() string { return "upload quota exceeded" }
+func (e *quotaError) HTTPStatus() int { return http.StatusRequestEntityTooLarge }
 
 func (s *UploadService) ReceiveChunk(ctx context.Context, uploadID string, chunkNumber int, data io.Reader) error {
 	chunkPath := filepath.Join(s.dataDir, "chunks", uploadID, fmt.Sprintf("%05d", chunkNumber))
@@ -160,6 +188,19 @@ func (s *UploadService) assemble(ctx context.Context, uploadID string, totalChun
 		chunk.Close()
 	}
 	out.Close()
+
+	// Record assembled file size and update user quota usage.
+	if fi, err := os.Stat(outPath); err == nil {
+		size := fi.Size()
+		if err := s.videos.UpdateSizeBytes(uploadID, size); err != nil {
+			slog.Warn("updating video size_bytes", "upload_id", uploadID, "err", err)
+		}
+		if video.UserID != "" {
+			if err := s.userRepo.IncUsedBytes(ctx, video.UserID, size); err != nil {
+				slog.Warn("incrementing user used_bytes", "user_id", video.UserID, "err", err)
+			}
+		}
+	}
 
 	if err := os.RemoveAll(chunkDir); err != nil {
 		slog.Warn("removing chunk dir", "path", chunkDir, "err", err)
