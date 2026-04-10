@@ -90,10 +90,11 @@ func (h *PageHandler) Watch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	h.tmpl.ExecuteTemplate(w, "player.html", map[string]string{
+	h.tmpl.ExecuteTemplate(w, "player.html", map[string]any{
 		"VideoID":   videoID,
 		"Title":     video.Title,
 		"PlayCount": fmt.Sprintf("%d", video.PlayCount),
+		"User":      middleware.CurrentUser(r.Context()),
 	})
 }
 
@@ -116,8 +117,9 @@ func (h *PageHandler) WatchLive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	h.tmpl.ExecuteTemplate(w, "watch_live.html", map[string]string{
+	h.tmpl.ExecuteTemplate(w, "watch_live.html", map[string]any{
 		"StreamID": streamID,
 		"Title":    stream.Title,
+		"User":     middleware.CurrentUser(r.Context()),
 	})
 }

@@ -169,7 +169,7 @@ func (ts *transcodeSession) writeTag(tagType byte, timestamp uint32, payload []b
 }
 
 func (ts *transcodeSession) writeVideo(timestamp uint32, payload io.Reader) error {
-	data, err := io.ReadAll(payload)
+	data, err := io.ReadAll(io.LimitReader(payload, 10<<20)) // 10 MiB per frame
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func (ts *transcodeSession) writeVideo(timestamp uint32, payload io.Reader) erro
 }
 
 func (ts *transcodeSession) writeAudio(timestamp uint32, payload io.Reader) error {
-	data, err := io.ReadAll(payload)
+	data, err := io.ReadAll(io.LimitReader(payload, 10<<20)) // 10 MiB per frame
 	if err != nil {
 		return err
 	}

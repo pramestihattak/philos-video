@@ -43,8 +43,18 @@ func NewManager(
 	}
 }
 
+const maxLiveStreams = 10
+
 // StartStream validates the stream key, creates DB records, and starts FFmpeg.
 func (m *Manager) StartStream(streamKey string) (*models.LiveStream, error) {
+	m.mu.RLock()
+	activeCount := len(m.sessions)
+	m.mu.RUnlock()
+	if activeCount >= maxLiveStreams {
+		metrics.RTMPConnectionsTotal.WithLabelValues("rejected").Inc()
+		return nil, fmt.Errorf("max concurrent streams (%d) reached", maxLiveStreams)
+	}
+
 	sk, err := m.streamKeyRepo.GetByID(streamKey)
 	if err != nil {
 		metrics.RTMPConnectionsTotal.WithLabelValues("rejected").Inc()

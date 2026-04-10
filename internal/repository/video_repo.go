@@ -195,6 +195,11 @@ func (r *VideoRepo) Delete(id, userID string) error {
 		return err
 	}
 
+	// Delete comments for this video.
+	if _, err := tx.Exec(`DELETE FROM comments WHERE video_id = $1`, id); err != nil {
+		return err
+	}
+
 	// Delete events for sessions belonging to this video.
 	if _, err := tx.Exec(`
 		DELETE FROM playback_events pe

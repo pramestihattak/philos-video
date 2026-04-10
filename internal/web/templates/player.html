@@ -21,7 +21,7 @@ html, body { height: 100%; }
   --pill-active-bg: #111111;
   --pill-active-text: #ffffff;
   --accent: #5a67d8;
-  --shadow-card: 0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --danger: #dc2626;
   --shadow-video: 0 4px 24px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
 }
 
@@ -76,21 +76,40 @@ header {
 }
 .header-dash-link:hover { background: var(--pill-hover); color: var(--text-2); }
 
-/* ── Layout ── */
+/* ── Two-column layout ── */
 .page-content {
   flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1.25rem;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 3rem;
+  align-items: start;
+}
+@media (max-width: 920px) {
+  .page-content {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: static !important;
+    max-height: 420px !important;
+  }
+}
+
+/* ── Main column ── */
+.main-column {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 2rem 1rem 3rem;
   gap: 0;
 }
 
 /* ── Video card ── */
 .video-card {
   width: 100%;
-  max-width: 960px;
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
   background: #000;
   box-shadow: var(--shadow-video);
@@ -158,26 +177,24 @@ video {
 
 /* ── Info section ── */
 .info-section {
-  width: 100%;
-  max-width: 960px;
-  padding: 1.25rem 0.25rem 0;
+  padding: 1rem 0.1rem 0;
 }
 .video-title-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 0.9rem;
+  margin-bottom: 0.75rem;
 }
 .video-title {
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 600;
   line-height: 1.45;
   letter-spacing: -0.02em;
   color: var(--text);
 }
 .play-count {
-  font-size: 0.73rem;
+  font-size: 0.72rem;
   color: var(--text-3);
   white-space: nowrap;
   padding-top: 0.2rem;
@@ -185,7 +202,7 @@ video {
 .divider {
   height: 1px;
   background: var(--border);
-  margin-bottom: 0.9rem;
+  margin-bottom: 0.75rem;
 }
 .controls-bar {
   display: flex;
@@ -201,8 +218,6 @@ video {
   font-weight: 500;
   flex-shrink: 0;
 }
-
-/* Quality pills */
 .quality-pills { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .q-pill {
   background: var(--pill-bg);
@@ -216,12 +231,7 @@ video {
   transition: background 0.1s, color 0.1s;
 }
 .q-pill:hover { background: var(--pill-hover); color: var(--text); }
-.q-pill.active {
-  background: var(--pill-active-bg);
-  color: var(--pill-active-text);
-}
-
-/* Stats button */
+.q-pill.active { background: var(--pill-active-bg); color: var(--pill-active-text); }
 .stats-btn {
   margin-left: auto;
   background: var(--pill-bg);
@@ -239,15 +249,170 @@ video {
 }
 .stats-btn:hover { background: var(--pill-hover); color: var(--text-2); }
 .stats-btn.active { color: var(--accent); }
-.stats-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  opacity: 0;
-  transition: opacity 0.2s;
-}
+.stats-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: 0; transition: opacity 0.2s; }
 .stats-btn.active .stats-dot { opacity: 1; }
+
+/* ── Comments sidebar ── */
+.sidebar {
+  position: sticky;
+  top: calc(56px + 1rem);
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.sidebar-header {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.sidebar-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.comment-count {
+  font-size: 0.72rem;
+  color: var(--text-3);
+}
+
+/* Comment form */
+.comment-form {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.comment-form textarea {
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.12s;
+}
+.comment-form textarea:focus { border-color: var(--border-hover); }
+.comment-form textarea::placeholder { color: var(--text-3); }
+.comment-form-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+.btn-submit {
+  background: var(--pill-active-bg);
+  color: var(--pill-active-text);
+  border: none;
+  border-radius: 6px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+.btn-submit:hover { opacity: 0.85; }
+.btn-submit:disabled { opacity: 0.4; cursor: default; }
+
+/* Login prompt */
+.login-prompt {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.login-prompt a { color: var(--accent); text-decoration: none; }
+.login-prompt a:hover { text-decoration: underline; }
+
+/* Comments list */
+.comments-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 0;
+}
+.comment-item {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.6rem 1rem;
+  position: relative;
+}
+.comment-item:hover { background: var(--bg); }
+.comment-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--border);
+}
+.comment-avatar-placeholder {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--pill-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.comment-body-wrap { flex: 1; min-width: 0; }
+.comment-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+.comment-author {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.comment-time {
+  font-size: 0.68rem;
+  color: var(--text-3);
+}
+.comment-text {
+  font-size: 0.8rem;
+  color: var(--text-2);
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.comment-delete {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 0.72rem;
+  padding: 0.2rem 0.3rem;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.comment-item:hover .comment-delete { opacity: 1; }
+.comment-delete:hover { color: var(--danger); background: rgba(220,38,38,0.08); }
+.comments-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-3);
+}
 </style>
 </head>
 <body>
@@ -264,38 +429,66 @@ video {
 </header>
 
 <div class="page-content">
-  <div class="video-card">
-    <div class="video-aspect">
-      <div id="loading">
-        <div class="spinner-ring"></div>
-        <span id="loading-text">Initializing player…</span>
+  <!-- Main: video + info -->
+  <div class="main-column">
+    <div class="video-card">
+      <div class="video-aspect">
+        <div id="loading">
+          <div class="spinner-ring"></div>
+          <span id="loading-text">Initializing player…</span>
+        </div>
+        <video id="video" controls playsinline style="opacity:0;transition:opacity 0.3s;"></video>
+        <div id="stats-overlay">
+          <div class="stat-row"><span class="stat-label">Quality</span><span class="stat-value" id="ov-quality">—</span></div>
+          <div class="stat-row"><span class="stat-label">Bandwidth</span><span class="stat-value" id="ov-bw">—</span></div>
+          <div class="stat-row"><span class="stat-label">Buffer</span><span class="stat-value"><span id="ov-buf">—</span>s</span></div>
+          <div class="stat-row"><span class="stat-label">Seg dl</span><span class="stat-value"><span id="ov-seg">—</span>ms</span></div>
+          <div id="ov-sess"></div>
+        </div>
       </div>
-      <video id="video" controls playsinline style="opacity:0;transition:opacity 0.3s;"></video>
-      <div id="stats-overlay">
-        <div class="stat-row"><span class="stat-label">Quality</span><span class="stat-value" id="ov-quality">—</span></div>
-        <div class="stat-row"><span class="stat-label">Bandwidth</span><span class="stat-value" id="ov-bw">—</span></div>
-        <div class="stat-row"><span class="stat-label">Buffer</span><span class="stat-value"><span id="ov-buf">—</span>s</span></div>
-        <div class="stat-row"><span class="stat-label">Seg dl</span><span class="stat-value"><span id="ov-seg">—</span>ms</span></div>
-        <div id="ov-sess"></div>
+    </div>
+
+    <div class="info-section">
+      <div class="video-title-row">
+        <h1 class="video-title">{{.Title}}</h1>
+        <span class="play-count">{{.PlayCount}} plays</span>
+      </div>
+      <div class="divider"></div>
+      <div class="controls-bar" id="controls-bar" style="display:none;">
+        <span class="controls-label">Quality</span>
+        <div class="quality-pills" id="quality-pills">
+          <button class="q-pill active" data-level="-1">Auto</button>
+        </div>
+        <button class="stats-btn" id="stats-btn" onclick="toggleStats()">
+          <span class="stats-dot"></span>
+          Stats
+        </button>
       </div>
     </div>
   </div>
 
-  <div class="info-section">
-    <div class="video-title-row">
-      <h1 class="video-title">{{.Title}}</h1>
-      <span class="play-count">{{.PlayCount}} plays</span>
+  <!-- Sidebar: comments -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Comments</span>
+      <span class="comment-count" id="comment-count"></span>
     </div>
-    <div class="divider"></div>
-    <div class="controls-bar" id="controls-bar" style="display:none;">
-      <span class="controls-label">Quality</span>
-      <div class="quality-pills" id="quality-pills">
-        <button class="q-pill active" data-level="-1">Auto</button>
+
+    {{if .User}}
+    <div class="comment-form">
+      <textarea id="comment-input" rows="2" placeholder="Add a comment… (emoji OK 😊)" maxlength="2000"></textarea>
+      <div class="comment-form-footer">
+        <button class="btn-submit" id="comment-submit" onclick="submitComment()">Post</button>
       </div>
-      <button class="stats-btn" id="stats-btn" onclick="toggleStats()">
-        <span class="stats-dot"></span>
-        Stats
-      </button>
+    </div>
+    {{else}}
+    <div class="login-prompt">
+      <a href="/auth/google/login?return=/watch/{{.VideoID}}">Sign in</a> to leave a comment.
+    </div>
+    {{end}}
+
+    <div class="comments-list" id="comments-list">
+      <div class="comments-empty" id="comments-empty" style="display:none;">No comments yet.</div>
     </div>
   </div>
 </div>
@@ -303,7 +496,9 @@ video {
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
 <script>
 const VIDEO_ID = "{{.VideoID}}";
+const CURRENT_USER_ID = "{{if .User}}{{.User.ID}}{{end}}";
 
+/* ── Telemetry ── */
 class TelemetryClient {
   constructor(sessionId, telemetryUrl) {
     this.sessionId = sessionId;
@@ -401,7 +596,11 @@ async function initPlayer() {
     if (!res.ok) throw new Error(await res.text() || res.statusText);
     session = await res.json();
   } catch (e) {
-    loading.innerHTML = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(248,113,113,0.8)" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg><span style="color:rgba(248,113,113,0.8);font-size:0.8rem;">Session failed</span><span style="color:rgba(255,255,255,0.2);font-size:0.68rem;max-width:260px;text-align:center;">${e.message}</span>`;
+    loading.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(248,113,113,0.8)" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg><span style="color:rgba(248,113,113,0.8);font-size:0.8rem;">Session failed</span>';
+    const errDetail = document.createElement('span');
+    errDetail.style.cssText = 'color:rgba(255,255,255,0.2);font-size:0.68rem;max-width:260px;text-align:center;';
+    errDetail.textContent = e.message;
+    loading.appendChild(errDetail);
     return;
   }
 
@@ -484,6 +683,150 @@ async function initPlayer() {
 }
 
 initPlayer();
+
+/* ── Comments ── */
+const commentsList = document.getElementById('comments-list');
+const commentCount = document.getElementById('comment-count');
+const commentsEmpty = document.getElementById('comments-empty');
+
+function relativeTime(isoStr) {
+  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+}
+
+function avatarEl(pic, name) {
+  if (pic) {
+    const img = document.createElement('img');
+    img.className = 'comment-avatar';
+    img.src = pic;
+    img.alt = name;
+    return img;
+  }
+  const el = document.createElement('div');
+  el.className = 'comment-avatar-placeholder';
+  el.textContent = (name || '?')[0].toUpperCase();
+  return el;
+}
+
+function buildCommentEl(c) {
+  const item = document.createElement('div');
+  item.className = 'comment-item';
+  item.dataset.id = c.id;
+
+  item.appendChild(avatarEl(c.user_picture, c.user_name));
+
+  const bodyWrap = document.createElement('div');
+  bodyWrap.className = 'comment-body-wrap';
+
+  const meta = document.createElement('div');
+  meta.className = 'comment-meta';
+  const author = document.createElement('span');
+  author.className = 'comment-author';
+  author.textContent = c.user_name || 'Anonymous';
+  const time = document.createElement('span');
+  time.className = 'comment-time';
+  time.textContent = relativeTime(c.created_at);
+  meta.appendChild(author);
+  meta.appendChild(time);
+
+  const text = document.createElement('p');
+  text.className = 'comment-text';
+  text.textContent = c.body; // already escaped server-side
+
+  bodyWrap.appendChild(meta);
+  bodyWrap.appendChild(text);
+  item.appendChild(bodyWrap);
+
+  if (CURRENT_USER_ID && c.user_id === CURRENT_USER_ID) {
+    const del = document.createElement('button');
+    del.className = 'comment-delete';
+    del.title = 'Delete';
+    del.textContent = '×';
+    del.onclick = () => deleteComment(c.id, item);
+    item.appendChild(del);
+  }
+
+  return item;
+}
+
+let totalComments = 0;
+
+async function loadComments() {
+  try {
+    const res = await fetch(`/api/v1/videos/${VIDEO_ID}/comments?limit=50`);
+    if (!res.ok) return;
+    const comments = await res.json();
+    commentsList.innerHTML = '';
+    commentsList.appendChild(commentsEmpty);
+    totalComments = comments.length;
+    updateCount();
+    if (!comments.length) {
+      commentsEmpty.style.display = 'block';
+      return;
+    }
+    commentsEmpty.style.display = 'none';
+    comments.forEach(c => commentsList.appendChild(buildCommentEl(c)));
+  } catch {}
+}
+
+function updateCount() {
+  commentCount.textContent = totalComments > 0 ? totalComments : '';
+}
+
+async function submitComment() {
+  const input = document.getElementById('comment-input');
+  const btn = document.getElementById('comment-submit');
+  const body = input.value.trim();
+  if (!body) return;
+
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/v1/videos/${VIDEO_ID}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const comment = await res.json();
+    input.value = '';
+    commentsEmpty.style.display = 'none';
+    // Prepend (newest first)
+    const el = buildCommentEl(comment);
+    commentsList.insertBefore(el, commentsList.firstChild);
+    totalComments++;
+    updateCount();
+  } catch (e) {
+    alert('Failed to post comment: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deleteComment(id, el) {
+  if (!confirm('Delete this comment?')) return;
+  try {
+    const res = await fetch(`/api/v1/videos/${VIDEO_ID}/comments/${id}`, { method: 'DELETE' });
+    if (!res.ok && res.status !== 204) throw new Error();
+    el.remove();
+    totalComments = Math.max(0, totalComments - 1);
+    updateCount();
+    if (!commentsList.querySelector('.comment-item')) {
+      commentsEmpty.style.display = 'block';
+    }
+  } catch {
+    alert('Failed to delete comment.');
+  }
+}
+
+// Submit on Ctrl+Enter / Cmd+Enter
+document.getElementById('comment-input')?.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') submitComment();
+});
+
+loadComments();
 </script>
 </body>
 </html>

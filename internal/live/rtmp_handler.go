@@ -18,7 +18,11 @@ type rtmpHandler struct {
 
 func (h *rtmpHandler) OnPublish(_ *rtmp.StreamContext, timestamp uint32, cmd *message.NetStreamPublish) error {
 	streamKey := cmd.PublishingName
-	slog.Info("RTMP publish", "stream_key", streamKey)
+	masked := streamKey
+	if len(masked) > 8 {
+		masked = masked[:8] + "..."
+	}
+	slog.Info("RTMP publish", "stream_key", masked)
 
 	stream, err := h.manager.StartStream(streamKey)
 	if err != nil {

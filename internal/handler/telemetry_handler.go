@@ -36,11 +36,16 @@ func (h *TelemetryHandler) PostEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MiB cap
 	var req struct {
 		Events []models.PlaybackEvent `json:"events"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Events) > 1000 {
+		http.Error(w, "too many events", http.StatusBadRequest)
 		return
 	}
 

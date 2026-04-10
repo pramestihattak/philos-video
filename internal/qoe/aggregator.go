@@ -197,6 +197,17 @@ func (a *Aggregator) pruneSessions() {
 	for sessID, lastSeen := range a.activeSessions {
 		if lastSeen.Before(threshold) {
 			delete(a.activeSessions, sessID)
+			delete(a.sessionToVideo, sessID)
+		}
+	}
+	// Remove video title cache entries no longer referenced by any session.
+	referenced := make(map[string]struct{}, len(a.sessionToVideo))
+	for _, vid := range a.sessionToVideo {
+		referenced[vid] = struct{}{}
+	}
+	for vid := range a.videoTitles {
+		if _, ok := referenced[vid]; !ok {
+			delete(a.videoTitles, vid)
 		}
 	}
 }
