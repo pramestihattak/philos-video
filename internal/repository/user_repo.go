@@ -2,11 +2,10 @@ package repository
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 
+	"github.com/google/uuid"
 	"philos-video/internal/models"
 )
 
@@ -35,11 +34,7 @@ const userCols = `id, google_sub, email, name, picture, upload_quota_bytes, used
 // UpsertFromGoogle inserts a new user or updates email/name/picture if the
 // google_sub already exists. Returns the user and whether it was newly created.
 func (r *UserRepo) UpsertFromGoogle(ctx context.Context, googleSub, email, name, picture string, defaultQuota int64) (*models.User, bool, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return nil, false, fmt.Errorf("generating user id: %w", err)
-	}
-	id := "usr_" + hex.EncodeToString(b)
+	id := uuid.New().String()
 
 	row := r.db.QueryRowContext(ctx,
 		`INSERT INTO users (id, google_sub, email, name, picture, upload_quota_bytes)

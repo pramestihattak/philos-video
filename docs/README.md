@@ -13,7 +13,7 @@ A self-hosted video streaming platform written in Go. Supports chunked upload, s
 3. [Quick Start](#3-quick-start)
 4. [Configuration](#4-configuration)
 5. [Directory Structure](#5-directory-structure)
-6. [Database Schema](#6-database-schema)
+6. [Database Schema & Migrations](#6-database-schema)
 7. [HTTP API Reference](#7-http-api-reference)
 8. [Authentication & Authorization](#8-authentication--authorization)
 9. [VOD Pipeline](#9-vod-pipeline)
@@ -268,7 +268,37 @@ data/
 
 ## 6. Database Schema
 
-Migrations run automatically on startup via `database.Migrate(db)`. The SQL is inlined in `internal/database/postgres.go` (so `go:embed` can reach it from within the module).
+Migrations are managed by [goose](https://github.com/pressly/goose) and live in `internal/database/migrations/`. They are embedded into the binary at build time (`//go:embed migrations/*.sql`) and applied automatically on startup via `database.Migrate(db)`.
+
+### Managing migrations
+
+| Command | Description |
+|---|---|
+| `make migrate-up` | Apply all pending migrations |
+| `make migrate-down` | Roll back the last applied migration |
+| `make migrate-status` | Show which migrations are applied / pending |
+| `make migrate-new name=<name>` | Scaffold a new numbered SQL migration file |
+
+`DATABASE_URL` is read from `.env` automatically by the Makefile (via `-include .env`), so no manual `export` is needed.
+
+**Creating a migration:**
+```bash
+make migrate-new name=add_thumbnail_url
+# → internal/database/migrations/00002_add_thumbnail_url.sql
+```
+
+Edit the generated file — fill in the `-- +goose Up` block (forward SQL) and the `-- +goose Down` block (rollback SQL), then run `make migrate-up`.
+
+**Migration file format:**
+```sql
+-- +goose Up
+ALTER TABLE videos ADD COLUMN thumbnail_url TEXT;
+
+-- +goose Down
+ALTER TABLE videos DROP COLUMN thumbnail_url;
+```
+
+> **On startup:** `database.Migrate()` calls `goose.Up()`, which is a no-op if the schema is already current. Migration state is tracked in the `goose_db_version` table.
 
 ### `videos`
 Primary record for a video asset. Created at upload, updated through the transcode pipeline.

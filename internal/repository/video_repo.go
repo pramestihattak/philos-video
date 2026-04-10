@@ -35,7 +35,8 @@ const getByIDQuery = `
 	FROM videos v
 	WHERE v.id = $1`
 
-// listQuery scoped to a user, using LEFT JOIN + GROUP BY to avoid N+1.
+// listQuery returns public ready videos from all users combined with all
+// videos belonging to the requesting user (any visibility, any status).
 const listQuery = `
 	SELECT v.id, v.user_id, v.title, v.visibility, v.status,
 	       COALESCE(v.width,0), COALESCE(v.height,0),
@@ -45,12 +46,14 @@ const listQuery = `
 	       v.created_at, v.updated_at
 	FROM videos v
 	LEFT JOIN playback_sessions ps ON ps.video_id = v.id
-	WHERE v.user_id = $3
+	WHERE (v.visibility = 'public' AND v.status = 'ready')
+	   OR v.user_id = $3
 	GROUP BY v.id
 	ORDER BY v.created_at DESC
 	LIMIT $1 OFFSET $2`
 
-// listPublicQuery returns public and unlisted videos visible to guests.
+// listPublicQuery returns public ready videos visible to guests.
+// Unlisted videos are accessible by direct link only — not listed here.
 const listPublicQuery = `
 	SELECT v.id, v.user_id, v.title, v.visibility, v.status,
 	       COALESCE(v.width,0), COALESCE(v.height,0),
@@ -60,7 +63,7 @@ const listPublicQuery = `
 	       v.created_at, v.updated_at
 	FROM videos v
 	LEFT JOIN playback_sessions ps ON ps.video_id = v.id
-	WHERE v.visibility IN ('public', 'unlisted') AND v.status = 'ready'
+	WHERE v.visibility = 'public' AND v.status = 'ready'
 	GROUP BY v.id
 	ORDER BY v.created_at DESC
 	LIMIT $1 OFFSET $2`

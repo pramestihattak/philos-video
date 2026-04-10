@@ -76,7 +76,7 @@ func (s *UploadService) InitUpload(ctx context.Context, user *models.User, filen
 		ID:         id,
 		UserID:     user.ID,
 		Title:      filename,
-		Visibility: models.VisibilityPrivate,
+		Visibility: models.VisibilityPublic,
 		Status:     models.VideoStatusUploading,
 	}
 	if err := s.videos.Create(video); err != nil {
