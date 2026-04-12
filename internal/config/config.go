@@ -33,6 +33,10 @@ type Config struct {
 
 	// Per-user upload quota (bytes). 0 = unlimited.
 	DefaultUploadQuotaBytes int64 `env:"DEFAULT_UPLOAD_QUOTA_BYTES" envDefault:"10737418240"`
+
+	// Comma-separated list of email addresses allowed to use Go Live.
+	// Empty means no one can go live. Example: alice@example.com,bob@example.com
+	GoLiveWhitelist []string `env:"GOLIVE_WHITELIST" envSeparator:","`
 }
 
 func Load() (*Config, error) {

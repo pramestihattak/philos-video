@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>403 Forbidden — PramTube</title>
+<script>(function(){var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t)})();</script>
+<style>
+:root {
+  --bg: #f7f7f5; --surface: #ffffff;
+  --border: #e6e6e1; --text: #18181b; --text-2: #52525b; --text-3: #a1a1aa;
+  --link: #2563eb;
+}
+[data-theme="dark"] {
+  --bg: #0f0f0f; --surface: #1a1a1a;
+  --border: #2a2a2a; --text: #e4e4e7; --text-2: #a1a1aa; --text-3: #52525b;
+  --link: #60a5fa;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: system-ui, sans-serif; min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0;
+}
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 3rem 2.5rem;
+  max-width: 400px; width: 100%; text-align: center;
+}
+.code {
+  font-size: 4rem; font-weight: 800; letter-spacing: -0.04em;
+  color: var(--text); line-height: 1; margin-bottom: 0.5rem;
+}
+.label {
+  font-size: 1rem; font-weight: 600; color: var(--text-2); margin-bottom: 1rem;
+}
+.desc {
+  font-size: 0.875rem; color: var(--text-3); line-height: 1.6; margin-bottom: 2rem;
+}
+.actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+.btn {
+  display: inline-block; padding: 0.6rem 1.4rem; border-radius: 7px;
+  font-size: 0.875rem; font-weight: 500; text-decoration: none; cursor: pointer;
+  border: none;
+}
+.btn-primary { background: var(--link); color: #fff; }
+.btn-primary:hover { opacity: 0.88; }
+.btn-ghost {
+  background: none; border: 1px solid var(--border);
+  color: var(--text-2);
+}
+.btn-ghost:hover { color: var(--text); border-color: var(--text-3); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="code">403</div>
+  <div class="label">Access Restricted</div>
+  <div class="desc">
+    This feature is only available to authorized users.<br>
+    {{if .User}}
+    You're signed in as <strong>{{.User.Email}}</strong>, but your account doesn't have access to this page.
+    {{else}}
+    Please sign in with an authorized account.
+    {{end}}
+  </div>
+  <div style="font-size:0.8rem;color:var(--text-3);margin-bottom:2rem;line-height:1.6;">
+    If you're interested in going live, please contact the administrator at<br>
+    <a href="mailto:pramestihattak@gmail.com" style="color:var(--link);text-decoration:none;">pramestihattak@gmail.com</a>
+  </div>
+  <div class="actions">
+    <a href="/" class="btn btn-primary">← Go Home</a>
+    {{if .User}}
+    <form method="POST" action="/auth/logout" style="display:inline;">
+      <button type="submit" class="btn btn-ghost">Sign out</button>
+    </form>
+    {{else}}
+    <a href="/login" class="btn btn-ghost">Sign in</a>
+    {{end}}
+  </div>
+</div>
+</body>
+</html>

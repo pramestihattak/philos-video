@@ -23,20 +23,21 @@ const (
 )
 
 type Video struct {
-	ID         string    `json:"id"`
-	UserID     string    `json:"user_id,omitempty"`
-	Title      string    `json:"title"`
-	Visibility string    `json:"visibility"`
-	Status     string    `json:"status"`
-	Width      int       `json:"width"`
-	Height     int       `json:"height"`
-	Duration   string    `json:"duration"`
-	Codec      string    `json:"codec"`
-	HLSPath    string    `json:"hls_path"`
-	SizeBytes  int64     `json:"size_bytes,omitempty"`
-	PlayCount  int       `json:"play_count"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	UserID        string    `json:"user_id,omitempty"`
+	Title         string    `json:"title"`
+	Visibility    string    `json:"visibility"`
+	Status        string    `json:"status"`
+	Width         int       `json:"width"`
+	Height        int       `json:"height"`
+	Duration      string    `json:"duration"`
+	Codec         string    `json:"codec"`
+	HLSPath       string    `json:"hls_path"`
+	SizeBytes     int64     `json:"size_bytes,omitempty"`
+	ThumbnailPath string    `json:"thumbnail_path,omitempty"`
+	PlayCount     int       `json:"play_count"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type UploadChunk struct {

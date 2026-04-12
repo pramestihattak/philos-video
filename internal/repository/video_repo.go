@@ -29,7 +29,7 @@ const getByIDQuery = `
 	SELECT v.id, v.user_id, v.title, v.visibility, v.status,
 	       COALESCE(v.width,0), COALESCE(v.height,0),
 	       COALESCE(v.duration,''), COALESCE(v.codec,''), COALESCE(v.hls_path,''),
-	       COALESCE(v.size_bytes,0),
+	       COALESCE(v.size_bytes,0), COALESCE(v.thumbnail_path,''),
 	       (SELECT COUNT(*) FROM playback_sessions ps WHERE ps.video_id = v.id),
 	       v.created_at, v.updated_at
 	FROM videos v
@@ -41,7 +41,7 @@ const listQuery = `
 	SELECT v.id, v.user_id, v.title, v.visibility, v.status,
 	       COALESCE(v.width,0), COALESCE(v.height,0),
 	       COALESCE(v.duration,''), COALESCE(v.codec,''), COALESCE(v.hls_path,''),
-	       COALESCE(v.size_bytes,0),
+	       COALESCE(v.size_bytes,0), COALESCE(v.thumbnail_path,''),
 	       COUNT(ps.id),
 	       v.created_at, v.updated_at
 	FROM videos v
@@ -58,7 +58,7 @@ const listPublicQuery = `
 	SELECT v.id, v.user_id, v.title, v.visibility, v.status,
 	       COALESCE(v.width,0), COALESCE(v.height,0),
 	       COALESCE(v.duration,''), COALESCE(v.codec,''), COALESCE(v.hls_path,''),
-	       COALESCE(v.size_bytes,0),
+	       COALESCE(v.size_bytes,0), COALESCE(v.thumbnail_path,''),
 	       COUNT(ps.id),
 	       v.created_at, v.updated_at
 	FROM videos v
@@ -73,7 +73,7 @@ func scanVideo(s interface{ Scan(...any) error }) (*models.Video, error) {
 	err := s.Scan(
 		&v.ID, &v.UserID, &v.Title, &v.Visibility, &v.Status,
 		&v.Width, &v.Height, &v.Duration, &v.Codec, &v.HLSPath,
-		&v.SizeBytes, &v.PlayCount, &v.CreatedAt, &v.UpdatedAt,
+		&v.SizeBytes, &v.ThumbnailPath, &v.PlayCount, &v.CreatedAt, &v.UpdatedAt,
 	)
 	return v, err
 }
@@ -164,6 +164,14 @@ func (r *VideoRepo) UpdateSizeBytes(id string, size int64) error {
 	_, err := r.db.Exec(
 		`UPDATE videos SET size_bytes=$1, updated_at=$2 WHERE id=$3`,
 		size, time.Now(), id,
+	)
+	return err
+}
+
+func (r *VideoRepo) UpdateThumbnailPath(id, thumbnailPath string) error {
+	_, err := r.db.Exec(
+		`UPDATE videos SET thumbnail_path=$1, updated_at=$2 WHERE id=$3`,
+		thumbnailPath, time.Now(), id,
 	)
 	return err
 }

@@ -13,20 +13,22 @@ import (
 )
 
 type PageHandler struct {
-	videoSvc *service.VideoService
-	liveMgr  *live.Manager
-	tmpl     *template.Template
+	videoSvc        *service.VideoService
+	liveMgr         *live.Manager
+	tmpl            *template.Template
+	goLiveWhitelist []string
 }
 
-func NewPageHandler(videoSvc *service.VideoService, liveMgr *live.Manager) (*PageHandler, error) {
+func NewPageHandler(videoSvc *service.VideoService, liveMgr *live.Manager, goLiveWhitelist []string) (*PageHandler, error) {
 	tmpl, err := template.ParseFS(web.Templates, "templates/*.html")
 	if err != nil {
 		return nil, err
 	}
 	return &PageHandler{
-		videoSvc: videoSvc,
-		liveMgr:  liveMgr,
-		tmpl:     tmpl,
+		videoSvc:        videoSvc,
+		liveMgr:         liveMgr,
+		tmpl:            tmpl,
+		goLiveWhitelist: goLiveWhitelist,
 	}, nil
 }
 
@@ -47,9 +49,14 @@ func (h *PageHandler) Login(w http.ResponseWriter, r *http.Request) {
 // GET /
 func (h *PageHandler) Library(w http.ResponseWriter, r *http.Request) {
 	user := middleware.CurrentUser(r.Context())
+	canGoLive := false
+	if user != nil {
+		canGoLive = middleware.CanGoLive(h.goLiveWhitelist, user.Email)
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	h.tmpl.ExecuteTemplate(w, "library.html", map[string]any{
-		"User": user,
+		"User":      user,
+		"CanGoLive": canGoLive,
 	})
 }
 
@@ -91,10 +98,21 @@ func (h *PageHandler) Watch(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	h.tmpl.ExecuteTemplate(w, "player.html", map[string]any{
-		"VideoID":   videoID,
-		"Title":     video.Title,
-		"PlayCount": fmt.Sprintf("%d", video.PlayCount),
-		"User":      middleware.CurrentUser(r.Context()),
+		"VideoID":       videoID,
+		"Title":         video.Title,
+		"PlayCount":     fmt.Sprintf("%d", video.PlayCount),
+		"ThumbnailPath": video.ThumbnailPath,
+		"User":          middleware.CurrentUser(r.Context()),
+	})
+}
+
+// GET /forbidden
+func (h *PageHandler) Forbidden(w http.ResponseWriter, r *http.Request) {
+	user := middleware.CurrentUser(r.Context())
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+	h.tmpl.ExecuteTemplate(w, "forbidden.html", map[string]any{
+		"User": user,
 	})
 }
 

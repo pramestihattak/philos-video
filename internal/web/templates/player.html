@@ -437,7 +437,7 @@ video {
           <div class="spinner-ring"></div>
           <span id="loading-text">Initializing player…</span>
         </div>
-        <video id="video" controls playsinline style="opacity:0;transition:opacity 0.3s;"></video>
+        <video id="video" controls playsinline style="opacity:0;transition:opacity 0.3s;"{{if .ThumbnailPath}} poster="/thumbnails/{{.ThumbnailPath}}"{{end}}></video>
         <div id="stats-overlay">
           <div class="stat-row"><span class="stat-label">Quality</span><span class="stat-value" id="ov-quality">—</span></div>
           <div class="stat-row"><span class="stat-label">Bandwidth</span><span class="stat-value" id="ov-bw">—</span></div>

@@ -55,7 +55,8 @@ func generateID() (string, error) {
 // InitUpload creates a video record and chunk slots. It enforces the per-user
 // quota using the reported expectedSize (bytes). Pass 0 to skip the quota
 // check (e.g. for chunked uploads where size is unknown upfront).
-func (s *UploadService) InitUpload(ctx context.Context, user *models.User, filename string, totalChunks int, expectedSize int64) (string, error) {
+// title defaults to filename when empty. visibility defaults to "public" when empty or invalid.
+func (s *UploadService) InitUpload(ctx context.Context, user *models.User, filename, title, visibility string, totalChunks int, expectedSize int64) (string, error) {
 	// Quota check.
 	if expectedSize > 0 {
 		ok, err := s.userRepo.HasQuotaFor(ctx, user.ID, expectedSize)
@@ -67,6 +68,15 @@ func (s *UploadService) InitUpload(ctx context.Context, user *models.User, filen
 		}
 	}
 
+	if title == "" {
+		title = filename
+	}
+	switch visibility {
+	case models.VisibilityPrivate, models.VisibilityUnlisted, models.VisibilityPublic:
+	default:
+		visibility = models.VisibilityPublic
+	}
+
 	id, err := generateID()
 	if err != nil {
 		return "", fmt.Errorf("generating ID: %w", err)
@@ -75,8 +85,8 @@ func (s *UploadService) InitUpload(ctx context.Context, user *models.User, filen
 	video := &models.Video{
 		ID:         id,
 		UserID:     user.ID,
-		Title:      filename,
-		Visibility: models.VisibilityPublic,
+		Title:      title,
+		Visibility: visibility,
 		Status:     models.VideoStatusUploading,
 	}
 	if err := s.videos.Create(video); err != nil {
@@ -90,6 +100,13 @@ func (s *UploadService) InitUpload(ctx context.Context, user *models.User, filen
 	chunkDir := filepath.Join(s.dataDir, "chunks", id)
 	if err := os.MkdirAll(chunkDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating chunk dir: %w", err)
+	}
+
+	// Write the original filename to a sidecar file so assemble() can infer the extension
+	// without depending on the display title (which may not have an extension).
+	sidecarPath := filepath.Join(s.dataDir, "chunks", id, ".original_filename")
+	if err := os.MkdirAll(filepath.Join(s.dataDir, "chunks", id), 0o755); err == nil {
+		_ = os.WriteFile(sidecarPath, []byte(filename), 0o600)
 	}
 
 	slog.Info("upload initialized", "upload_id", id, "filename", filename, "total_chunks", totalChunks, "user_id", user.ID)
@@ -156,9 +173,15 @@ func (s *UploadService) assemble(ctx context.Context, uploadID string, totalChun
 		return fmt.Errorf("video not found: %s", uploadID)
 	}
 
-	ext := filepath.Ext(video.Title)
-	if ext == "" {
-		ext = ".mp4"
+	// Prefer original filename for extension (title may not have one).
+	ext := ".mp4"
+	sidecarPath := filepath.Join(s.dataDir, "chunks", uploadID, ".original_filename")
+	if raw, err := os.ReadFile(sidecarPath); err == nil && len(raw) > 0 {
+		if e := filepath.Ext(string(raw)); e != "" {
+			ext = e
+		}
+	} else if e := filepath.Ext(video.Title); e != "" {
+		ext = e
 	}
 
 	rawDir := filepath.Join(s.dataDir, "raw", uploadID)

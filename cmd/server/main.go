@@ -59,6 +59,7 @@ func main() {
 		filepath.Join(cfg.DataDir, "raw"),
 		filepath.Join(cfg.DataDir, "hls"),
 		filepath.Join(cfg.DataDir, "live"),
+		filepath.Join(cfg.DataDir, "thumbnails"),
 	} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			slog.Error("creating data directory", "dir", dir, "err", err)
@@ -154,7 +155,7 @@ func main() {
 
 	// Handlers
 	authH := handler.NewAuthHandler(oauthSvc, userSessionSvc, userRepo, cfg.DefaultUploadQuotaBytes)
-	uploadH := handler.NewUploadHandler(uploadSvc)
+	uploadH := handler.NewUploadHandler(uploadSvc, cfg.DataDir, videoRepo)
 	videoH := handler.NewVideoHandler(videoSvc)
 	sessionH := handler.NewSessionHandler(sessionSvc)
 	telemetryH := handler.NewTelemetryHandler(sessionRepo, eventRepo, aggregator)
@@ -165,7 +166,8 @@ func main() {
 	alertH := handler.NewAlertHandler(alertEngine)
 	commentH := handler.NewCommentHandler(commentSvc)
 	chatH := handler.NewChatHandler(chatHub)
-	pageH, err := handler.NewPageHandler(videoSvc, liveMgr)
+	goLiveGate := middleware.GoLiveGate(cfg.GoLiveWhitelist)
+	pageH, err := handler.NewPageHandler(videoSvc, liveMgr, cfg.GoLiveWhitelist)
 	if err != nil {
 		slog.Error("creating page handler", "err", err)
 		os.Exit(1)
@@ -188,6 +190,7 @@ func main() {
 
 	// Upload API — requires login + rate-limited
 	mux.Handle("POST /api/v1/uploads", uploadLimiter(requireUserAPI(http.HandlerFunc(uploadH.InitUpload))))
+	mux.Handle("POST /api/v1/uploads/{upload_id}/thumbnail", requireUserAPI(http.HandlerFunc(uploadH.UploadThumbnail)))
 	mux.Handle("PUT /api/v1/uploads/{upload_id}/chunks/{chunk_number}", requireUserAPI(http.HandlerFunc(uploadH.ReceiveChunk)))
 	mux.Handle("GET /api/v1/uploads/{upload_id}/status", requireUserAPI(http.HandlerFunc(uploadH.GetStatus)))
 
@@ -217,11 +220,11 @@ func main() {
 	mux.Handle("GET /api/v1/alerts/active", requireUser(http.HandlerFunc(alertH.Active)))
 	mux.Handle("GET /api/v1/alerts/history", requireUser(http.HandlerFunc(alertH.History)))
 
-	// Stream key management (requires login)
-	mux.Handle("POST /api/v1/stream-keys", requireUserAPI(http.HandlerFunc(streamKeyH.Create)))
-	mux.Handle("GET /api/v1/stream-keys", requireUserAPI(http.HandlerFunc(streamKeyH.List)))
-	mux.Handle("DELETE /api/v1/stream-keys/{id}", requireUserAPI(http.HandlerFunc(streamKeyH.Deactivate)))
-	mux.Handle("PATCH /api/v1/stream-keys/{id}", requireUserAPI(http.HandlerFunc(streamKeyH.Update)))
+	// Stream key management — requires login + Go Live whitelist
+	mux.Handle("POST /api/v1/stream-keys", requireUserAPI(goLiveGate(http.HandlerFunc(streamKeyH.Create))))
+	mux.Handle("GET /api/v1/stream-keys", requireUserAPI(goLiveGate(http.HandlerFunc(streamKeyH.List))))
+	mux.Handle("DELETE /api/v1/stream-keys/{id}", requireUserAPI(goLiveGate(http.HandlerFunc(streamKeyH.Deactivate))))
+	mux.Handle("PATCH /api/v1/stream-keys/{id}", requireUserAPI(goLiveGate(http.HandlerFunc(streamKeyH.Update))))
 
 	// Live stream API
 	mux.HandleFunc("GET /api/v1/live", liveH.ListLive)
@@ -235,6 +238,10 @@ func main() {
 	mux.HandleFunc("GET /api/v1/live/{stream_id}/chat/stream", chatH.ChatStream)
 	mux.HandleFunc("GET /api/v1/live/{stream_id}/chat", chatH.ListMessages)
 
+	// Thumbnails — public, no auth required (preview images)
+	thumbDir := filepath.Join(cfg.DataDir, "thumbnails")
+	mux.Handle("GET /thumbnails/", http.StripPrefix("/thumbnails/", http.FileServer(http.Dir(thumbDir))))
+
 	// VOD HLS file serving — protected by JWT middleware
 	hlsDir := filepath.Join(cfg.DataDir, "hls")
 	hlsHandler := http.StripPrefix("/videos/", mimeHandler(http.FileServer(http.Dir(hlsDir))))
@@ -246,12 +253,13 @@ func main() {
 	mux.Handle("GET /live/", authMiddleware.RequireLiveToken(liveHLSHandler))
 
 	// Pages — inject user into context; protected pages use RequireUser middleware
+	mux.Handle("GET /forbidden", optionalUser(http.HandlerFunc(pageH.Forbidden)))
 	mux.Handle("GET /login", optionalUser(http.HandlerFunc(pageH.Login)))
 	mux.Handle("GET /", optionalUser(http.HandlerFunc(pageH.Library)))
 	mux.Handle("GET /upload", requireUser(http.HandlerFunc(pageH.Upload)))
 	mux.Handle("GET /dashboard", requireUser(http.HandlerFunc(pageH.Dashboard)))
 	mux.Handle("GET /watch/{video_id}", optionalUser(http.HandlerFunc(pageH.Watch)))
-	mux.Handle("GET /go-live", requireUser(http.HandlerFunc(pageH.GoLive)))
+	mux.Handle("GET /go-live", requireUser(goLiveGate(http.HandlerFunc(pageH.GoLive))))
 	mux.Handle("GET /watch-live/{stream_id}", optionalUser(http.HandlerFunc(pageH.WatchLive)))
 
 	// Wrap mux with request ID + metrics + security headers middleware globally.
