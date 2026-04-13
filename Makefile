@@ -1,4 +1,4 @@
-.PHONY: transcode serve dev build clean db stop migrate-new migrate-up migrate-down migrate-status help
+.PHONY: transcode serve dev build clean db stop migrate-new migrate-up migrate-down migrate-status spec-validate spec-generate help
 
 -include .env
 export
@@ -55,6 +55,14 @@ migrate-down:
 ## migrate-status: show applied/pending migration status
 migrate-status:
 	$(GOOSE) status
+
+## spec-validate: validate the OpenAPI spec
+spec-validate:
+	cd definition && npx --yes @apidevtools/swagger-cli validate api.yaml
+
+## spec-generate: regenerate internal/api/api.gen.go from definition/api.yaml
+spec-generate:
+	cd definition && oapi-codegen --config=oapi-codegen.yaml api.yaml
 
 ## clean: remove build artifacts and data directory
 clean:

@@ -23,6 +23,10 @@ go test ./... -race -count=1                     # with race detector
 # Vet and tidy
 go vet ./...
 go mod tidy
+
+# OpenAPI spec
+make spec-validate  # validate definition/api.yaml
+make spec-generate  # regenerate internal/api/api.gen.go from spec
 ```
 
 **Requirements:** Go 1.22+, FFmpeg + FFprobe in PATH, Docker (for PostgreSQL).
@@ -33,18 +37,36 @@ The server runs at `:8080` (HTTP) and `:1935` (RTMP). Migrations run automatical
 
 Env vars are read from `.env` then the process environment (process env wins). Copy `.env.example` to `.env` to get started. The server **refuses to start** if `JWT_SECRET` is the default value.
 
-Key vars: `JWT_SECRET` (required), `GO_LIVE_PIN` (optional, warns if unset), `DATABASE_URL`, `DATA_DIR`, `WORKER_COUNT`.
+Key vars: `JWT_SECRET` (required), `DATABASE_URL`, `DATA_DIR`, `WORKER_COUNT`, `CORS_ORIGINS`, `GOLIVE_WHITELIST`.
 
 ## Architecture
 
+### OpenAPI convention
+
+The API is defined in `definition/api.yaml` (OpenAPI 3.0.3, single file). Code generation via `oapi-codegen` produces `internal/api/api.gen.go` which contains:
+- All request/response model types
+- `ServerInterface` — 30-method interface implemented by `*server.Server`
+- `HandlerFromMux(si ServerInterface, r chi.Router)` — registers all routes on a chi router
+
+Adding a new endpoint: update `definition/api.yaml` → `make spec-generate` → implement the new method on `*server.Server`.
+
 ### Request lifecycle
 
-All wiring happens in `cmd/server/main.go`: config → DB → repos → services → handlers → mux. There is no framework — routes use Go 1.22 method+pattern syntax (`"POST /api/v1/uploads"`).
+All wiring happens in `cmd/server/main.go`: config → DB → repos → services → `server.New(params)` → chi router → `api.HandlerFromMux`.
 
-Middleware stack (applied per-route, not globally):
-- **IP rate limiter** (`middleware.NewIPRateLimiter`) — on upload init and session creation
-- **JWT auth** (`AuthMiddleware.RequirePlaybackToken` / `RequireLiveToken`) — on all HLS file serving under `/videos/` and `/live/`
-- **GoLive PIN gate** (`GoLivePinGate` / `GoLivePinAPIGate`) — on `/go-live` page and stream-key API
+Router: `go-chi/chi/v5`. Global middleware stack (applied to all routes):
+- **CORS** (`go-chi/cors`) — configured via `CORS_ORIGINS`
+- **Request ID** (`middleware.RequestIDMiddleware`)
+- **Prometheus metrics** (`middleware.MetricsMiddleware`)
+- **Security headers** (`securityHeadersMiddleware`)
+- **Optional user** (`userAuthMW.OptionalUser`) — populates user context from session cookie
+
+Routes NOT in the OpenAPI spec (registered manually on chi):
+- `GET /auth/google/login`, `GET /auth/google/callback` — OAuth redirect flow
+- `GET /metrics` — Prometheus scrape endpoint (requires login)
+- `GET /thumbnails/*`, `GET /videos/*`, `GET /live/*` — static file serving
+
+Auth checks are applied inside handlers via `middleware.CurrentUser(ctx)`.
 
 ### VOD pipeline
 
@@ -75,10 +97,6 @@ RTMP :1935  →  RTMPHandler (go-rtmp) validates stream key
 
 `SessionService` issues HS256 tokens with claims `{sid, vid, stid}`. Tokens are passed as `?token=` query param (not headers) because Safari's native HLS player doesn't forward custom headers for sub-playlist requests. The middleware validates the token and enforces that the claimed `vid`/`stid` matches the requested path segment.
 
-### QoE aggregator
-
-`qoe.Aggregator` maintains an in-memory sliding window (5 min) of `PlaybackEvent` structs. It recalculates metrics every second and broadcasts to SSE subscribers via a fan-out channel. The `videoRepo` pointer is nullable — pass `nil` in tests to avoid DB calls.
-
 ### Database
 
 Schema is inlined in `internal/database/postgres.go` as `migrationSQL` — all `CREATE IF NOT EXISTS` / `ALTER IF NOT EXISTS`, so it's safe to re-run. No migration library.
@@ -87,7 +105,9 @@ Schema is inlined in `internal/database/postgres.go` as `migrationSQL` — all `
 
 ## Key Patterns
 
-- **Error handling in handlers:** log with `slog.Error`, return generic `"internal error"` to the client — never `err.Error()` directly in `http.Error()`.
+- **Error handling in handlers:** log with `slog.Error`, return generic `"internal error"` to the client — never `err.Error()` directly in responses. Use `writeError(w, msg, status)` helper.
+- **Response helpers:** `writeJSON(w, v, status)`, `writeError(w, msg, status)`, `decodeJSON(r, dst)` defined in `internal/server/errors.go`.
 - **Data dirs** are created at `0o700` (private to server process).
 - **`os.RemoveAll` failures** are logged at `WARN`, not swallowed silently.
 - **Config struct tags** use `github.com/caarlos0/env/v11` — add new env vars by adding a field with `env:"VAR_NAME" envDefault:"..."` tags.
+- **Handler files** in `internal/server/` follow `{domain}.go` naming (e.g. `video.go`, `upload.go`). Each file holds all handlers for that domain.
