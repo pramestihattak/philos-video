@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"philos-video/internal/alerting"
 	"philos-video/internal/config"
 	"philos-video/internal/database"
 	"philos-video/internal/handler"
@@ -25,7 +23,6 @@ import (
 	"philos-video/internal/logging"
 	"philos-video/internal/metrics"
 	"philos-video/internal/middleware"
-	"philos-video/internal/qoe"
 	"philos-video/internal/repository"
 	"philos-video/internal/service"
 	"philos-video/internal/watchdog"
@@ -135,15 +132,8 @@ func main() {
 		}
 	}()
 
-	// QoE aggregator — wire in live counter so dashboard shows live stream count
-	aggregator := qoe.New(videoRepo)
-	aggregator.SetLiveCounter(liveMgr)
-
 	// Health checker
 	healthChecker := health.NewHealthChecker(db, cfg.DataDir, cfg.RTMPPort)
-
-	// Alert engine
-	alertEngine := alerting.NewEngine(aggregator)
 
 	// Watchdog
 	wd := watchdog.New(liveMgr, jobRepo, cfg.DataDir)
@@ -158,20 +148,13 @@ func main() {
 	uploadH := handler.NewUploadHandler(uploadSvc, cfg.DataDir, videoRepo)
 	videoH := handler.NewVideoHandler(videoSvc)
 	sessionH := handler.NewSessionHandler(sessionSvc)
-	telemetryH := handler.NewTelemetryHandler(sessionRepo, eventRepo, aggregator)
-	dashboardH := handler.NewDashboardHandler(aggregator)
+	telemetryH := handler.NewTelemetryHandler(sessionRepo, eventRepo)
 	streamKeyH := handler.NewStreamKeyHandler(streamKeyRepo)
 	liveH := handler.NewLiveHandler(liveMgr, sessionSvc, sessionRepo)
 	healthH := handler.NewHealthHandler(healthChecker)
-	alertH := handler.NewAlertHandler(alertEngine)
 	commentH := handler.NewCommentHandler(commentSvc)
 	chatH := handler.NewChatHandler(chatHub)
 	goLiveGate := middleware.GoLiveGate(cfg.GoLiveWhitelist)
-	pageH, err := handler.NewPageHandler(videoSvc, liveMgr, cfg.GoLiveWhitelist)
-	if err != nil {
-		slog.Error("creating page handler", "err", err)
-		os.Exit(1)
-	}
 
 	mux := http.NewServeMux()
 
@@ -212,14 +195,6 @@ func main() {
 	// Telemetry (session-validated inside handler)
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/events", telemetryH.PostEvents)
 
-	// Dashboard API — requires login
-	mux.Handle("GET /api/v1/dashboard/stats", requireUser(http.HandlerFunc(dashboardH.GetStats)))
-	mux.Handle("GET /api/v1/dashboard/stats/stream", requireUser(http.HandlerFunc(dashboardH.StatsStream)))
-
-	// Alerts API — requires login
-	mux.Handle("GET /api/v1/alerts/active", requireUser(http.HandlerFunc(alertH.Active)))
-	mux.Handle("GET /api/v1/alerts/history", requireUser(http.HandlerFunc(alertH.History)))
-
 	// Stream key management — requires login + Go Live whitelist
 	mux.Handle("POST /api/v1/stream-keys", requireUserAPI(goLiveGate(http.HandlerFunc(streamKeyH.Create))))
 	mux.Handle("GET /api/v1/stream-keys", requireUserAPI(goLiveGate(http.HandlerFunc(streamKeyH.List))))
@@ -252,16 +227,6 @@ func main() {
 	liveHLSHandler := http.StripPrefix("/live/", noCacheHandler(mimeHandler(http.FileServer(http.Dir(liveDir)))))
 	mux.Handle("GET /live/", authMiddleware.RequireLiveToken(liveHLSHandler))
 
-	// Pages — inject user into context; protected pages use RequireUser middleware
-	mux.Handle("GET /forbidden", optionalUser(http.HandlerFunc(pageH.Forbidden)))
-	mux.Handle("GET /login", optionalUser(http.HandlerFunc(pageH.Login)))
-	mux.Handle("GET /", optionalUser(http.HandlerFunc(pageH.Library)))
-	mux.Handle("GET /upload", requireUser(http.HandlerFunc(pageH.Upload)))
-	mux.Handle("GET /dashboard", requireUser(http.HandlerFunc(pageH.Dashboard)))
-	mux.Handle("GET /watch/{video_id}", optionalUser(http.HandlerFunc(pageH.Watch)))
-	mux.Handle("GET /go-live", requireUser(goLiveGate(http.HandlerFunc(pageH.GoLive))))
-	mux.Handle("GET /watch-live/{stream_id}", optionalUser(http.HandlerFunc(pageH.WatchLive)))
-
 	// Wrap mux with request ID + metrics + security headers middleware globally.
 	rootHandler := securityHeadersMiddleware(middleware.RequestIDMiddleware(middleware.MetricsMiddleware(mux)))
 
@@ -276,9 +241,6 @@ func main() {
 
 	// Start background services.
 	metrics.StartSystemCollector(ctx, cfg.DataDir, db)
-	alertEngine.Start(ctx, func() *alerting.SystemMetrics {
-		return buildSysMetrics(db)
-	})
 	wd.Start(ctx)
 
 	go func() {
@@ -322,19 +284,6 @@ func main() {
 
 	db.Close()
 	slog.Info("server stopped")
-}
-
-// buildSysMetrics samples system-level data for the alerting engine.
-func buildSysMetrics(db *sql.DB) *alerting.SystemMetrics {
-	sys := &alerting.SystemMetrics{}
-	sys.TranscodeQueueDepth = int(queueDepth(db))
-	return sys
-}
-
-func queueDepth(db *sql.DB) int64 {
-	var n int64
-	_ = db.QueryRow(`SELECT COUNT(*) FROM transcode_jobs WHERE status='queued'`).Scan(&n)
-	return n
 }
 
 func mimeHandler(next http.Handler) http.Handler {

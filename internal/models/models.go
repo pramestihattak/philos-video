@@ -25,6 +25,8 @@ const (
 type Video struct {
 	ID            string    `json:"id"`
 	UserID        string    `json:"user_id,omitempty"`
+	UploaderName    string    `json:"uploader_name,omitempty"`
+	UploaderPicture string    `json:"uploader_picture,omitempty"`
 	Title         string    `json:"title"`
 	Visibility    string    `json:"visibility"`
 	Status        string    `json:"status"`

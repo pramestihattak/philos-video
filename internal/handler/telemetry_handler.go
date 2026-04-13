@@ -8,18 +8,16 @@ import (
 
 	"philos-video/internal/metrics"
 	"philos-video/internal/models"
-	"philos-video/internal/qoe"
 	"philos-video/internal/repository"
 )
 
 type TelemetryHandler struct {
 	sessions *repository.SessionRepo
 	events   *repository.EventRepo
-	agg      *qoe.Aggregator
 }
 
-func NewTelemetryHandler(sessions *repository.SessionRepo, events *repository.EventRepo, agg *qoe.Aggregator) *TelemetryHandler {
-	return &TelemetryHandler{sessions: sessions, events: events, agg: agg}
+func NewTelemetryHandler(sessions *repository.SessionRepo, events *repository.EventRepo) *TelemetryHandler {
+	return &TelemetryHandler{sessions: sessions, events: events}
 }
 
 // POST /api/v1/sessions/{session_id}/events
@@ -68,8 +66,6 @@ func (h *TelemetryHandler) PostEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.agg.Ingest(req.Events)
-
 	// Bridge events to Prometheus metrics
 	for _, e := range req.Events {
 		metrics.TelemetryEventsReceived.WithLabelValues(e.EventType).Inc()
@@ -96,8 +92,6 @@ func (h *TelemetryHandler) PostEvents(w http.ResponseWriter, r *http.Request) {
 				code = e.ErrorCode
 			}
 			metrics.PlaybackErrorsTotal.WithLabelValues(code).Inc()
-		case "heartbeat":
-			// No bitrate field on PlaybackEvent; quality-based bitrate tracked by aggregator
 		}
 	}
 
