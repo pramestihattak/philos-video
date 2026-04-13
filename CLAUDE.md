@@ -37,7 +37,9 @@ The server runs at `:8080` (HTTP) and `:1935` (RTMP). Migrations run automatical
 
 Env vars are read from `.env` then the process environment (process env wins). Copy `.env.example` to `.env` to get started. The server **refuses to start** if `JWT_SECRET` is the default value.
 
-Key vars: `JWT_SECRET` (required), `DATABASE_URL`, `DATA_DIR`, `WORKER_COUNT`, `CORS_ORIGINS`, `GOLIVE_WHITELIST`.
+Required vars: `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`, `SESSION_COOKIE_SECRET`.
+
+Optional vars: `DATABASE_URL`, `DATA_DIR`, `WORKER_COUNT`, `CORS_ORIGINS`, `GOLIVE_WHITELIST`.
 
 ## Architecture
 
@@ -99,7 +101,7 @@ RTMP :1935  →  RTMPHandler (go-rtmp) validates stream key
 
 ### Database
 
-Schema is inlined in `internal/database/postgres.go` as `migrationSQL` — all `CREATE IF NOT EXISTS` / `ALTER IF NOT EXISTS`, so it's safe to re-run. No migration library.
+Migrations live in `internal/database/migrations/` (goose `.sql` files embedded in the binary). `database.Migrate(db)` runs `goose.Up()` on startup — a no-op if schema is current. Use `make migrate-new name=<name>` to scaffold a new migration.
 
 `VideoRepo.List()` uses `LEFT JOIN playback_sessions GROUP BY v.id` (not a correlated subquery) to avoid N+1. `VideoRepo.Delete()` cascades manually in a transaction (events → sessions → jobs → video) since there are no `ON DELETE CASCADE` constraints.
 

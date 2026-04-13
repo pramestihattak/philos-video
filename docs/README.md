@@ -1,8 +1,8 @@
-# PramTube — Developer Documentation
+# philos-video — Developer Documentation
 
 > **Overview & quick start:** [`../README.md`](../README.md)
 
-A self-hosted video streaming platform written in Go. Supports chunked upload, server-side transcoding to adaptive-bitrate HLS (VOD), live RTMP ingest with real-time HLS delivery, JWT-secured playback, and a live Quality of Experience (QoE) dashboard.
+A self-hosted video streaming **API server** written in Go. The backend exposes a REST API defined by an OpenAPI 3.0 spec; the frontend is a separate application. Supports chunked upload, server-side transcoding to adaptive-bitrate HLS, live RTMP ingest with real-time HLS delivery, Google OAuth authentication, and JWT-secured playback.
 
 ---
 
@@ -13,13 +13,13 @@ A self-hosted video streaming platform written in Go. Supports chunked upload, s
 3. [Quick Start](#3-quick-start)
 4. [Configuration](#4-configuration)
 5. [Directory Structure](#5-directory-structure)
-6. [Database Schema & Migrations](#6-database-schema)
-7. [HTTP API Reference](#7-http-api-reference)
-8. [Authentication & Authorization](#8-authentication--authorization)
-9. [VOD Pipeline](#9-vod-pipeline)
-10. [Live Streaming Pipeline](#10-live-streaming-pipeline)
-11. [QoE Aggregator](#11-qoe-aggregator)
-12. [Frontend Templates](#12-frontend-templates)
+6. [OpenAPI Workflow](#6-openapi-workflow)
+7. [Database Schema](#7-database-schema)
+8. [HTTP API Reference](#8-http-api-reference)
+9. [Authentication & Authorization](#9-authentication--authorization)
+10. [VOD Pipeline](#10-vod-pipeline)
+11. [Live Streaming Pipeline](#11-live-streaming-pipeline)
+12. [Telemetry](#12-telemetry)
 13. [Internal Packages](#13-internal-packages)
 14. [Data Flow Diagrams](#14-data-flow-diagrams)
 15. [Adding Features](#15-adding-features)
@@ -33,25 +33,26 @@ A self-hosted video streaming platform written in Go. Supports chunked upload, s
 ## 1. Architecture Overview
 
 ```
-                    ┌─────────────────────────────────────────────────────┐
-                    │                   Go HTTP Server (:8080)             │
-                    │                                                       │
-  Browser ──────────┤  Pages         (/,/upload,/dashboard,/watch/…)      │
-                    │  Video API     (/api/v1/videos/…)                    │
-  OBS/Encoder ──────┤  Upload API    (/api/v1/uploads/…)                  │
-     RTMP :1935     │  Session API   (/api/v1/…/sessions)                 │
-                    │  Telemetry     (/api/v1/sessions/…/events)           │
-                    │  Dashboard SSE (/api/v1/dashboard/stats/stream)      │
-                    │  HLS serving   (/videos/…  /live/…)  JWT protected   │
-                    └───────────────┬──────────────────────────────────────┘
-                                    │
-                    ┌───────────────▼────────────────┐
-                    │         PostgreSQL 15           │
-                    │  videos, upload_chunks,         │
-                    │  transcode_jobs,                │
-                    │  playback_sessions/events,      │
-                    │  stream_keys, live_streams      │
-                    └────────────────────────────────┘
+                    ┌──────────────────────────────────────────────────┐
+                    │              Go HTTP Server (:8080)               │
+                    │                                                    │
+  Frontend ─────────┤  chi router                                       │
+  (separate repo)   │  api.HandlerFromMux → 30 OpenAPI endpoints        │
+                    │  /auth/google/*     → OAuth redirect flow         │
+  OBS/Encoder ──────┤  /videos/*          → VOD HLS (JWT-protected)     │
+     RTMP :1935     │  /live/*            → Live HLS (JWT, no-cache)    │
+                    │  /thumbnails/*      → Thumbnail images (public)   │
+                    │  /metrics           → Prometheus (requires login)  │
+                    └──────────────────┬───────────────────────────────┘
+                                       │
+                    ┌──────────────────▼────────────────┐
+                    │           PostgreSQL 15             │
+                    │  users, videos, upload_chunks,      │
+                    │  transcode_jobs,                    │
+                    │  playback_sessions/events,          │
+                    │  stream_keys, live_streams,         │
+                    │  comments, chat_messages            │
+                    └────────────────────────────────────┘
 
 VOD path:  Upload → assemble → TranscodeWorker → FFmpeg → HLS fMP4 → data/hls/
 Live path: OBS → RTMP → go-rtmp → FLV pipe → FFmpeg → HLS TS → data/live/
@@ -59,16 +60,20 @@ Live path: OBS → RTMP → go-rtmp → FLV pipe → FFmpeg → HLS TS → data/
 
 ### Component layers
 
-| Layer | Purpose |
-|---|---|
-| `cmd/server` | Wire-up: config → DB → repos → services → workers → handlers → routes |
-| `internal/handler` | HTTP request parsing, response encoding |
-| `internal/service` | Business logic (no HTTP, no SQL) |
-| `internal/repository` | SQL queries, returns model structs |
-| `internal/live` | RTMP server + per-stream FFmpeg session management |
-| `internal/transcoder` | Low-level FFmpeg/FFprobe wrappers for VOD |
-| `internal/qoe` | In-memory sliding-window metrics aggregation |
-| `internal/middleware` | JWT auth, applied at route registration |
+| Layer | Package | Purpose |
+|---|---|---|
+| `cmd/server` | Entry point | Wire config → DB → repos → services → chi router |
+| `internal/api` | Generated code | Types, `ServerInterface`, `HandlerFromMux` (do not edit manually) |
+| `internal/server` | API handlers | Implements `ServerInterface` — one file per domain |
+| `internal/service` | Business logic | No HTTP, no SQL — pure domain operations |
+| `internal/repository` | Data access | SQL queries, returns model structs |
+| `internal/live` | Live ingest | RTMP server + per-stream FFmpeg session management |
+| `internal/transcoder` | VOD encoding | FFmpeg/FFprobe wrappers |
+| `internal/worker` | Job queue | Goroutine pool for transcode jobs |
+| `internal/watchdog` | Process monitor | Detects stuck FFmpeg processes, resets stalled jobs |
+| `internal/metrics` | Observability | Prometheus metric definitions + system collector |
+| `internal/health` | Health probes | Liveness and readiness checks |
+| `internal/middleware` | HTTP plumbing | JWT auth, rate limiting, request ID, metrics |
 
 ---
 
@@ -77,7 +82,7 @@ Live path: OBS → RTMP → go-rtmp → FLV pipe → FFmpeg → HLS TS → data/
 | Tool | Version | Purpose |
 |---|---|---|
 | Go | 1.22+ | Build & run |
-| FFmpeg + FFprobe | Any modern | Video encoding (must be in `$PATH`) |
+| FFmpeg + FFprobe | 4.0+ | Video encoding (must be in `$PATH`) |
 | Docker + Docker Compose | Any | Run PostgreSQL |
 
 ```bash
@@ -94,45 +99,61 @@ ffmpeg -version && ffprobe -version && go version
 ## 3. Quick Start
 
 ```bash
-# 1. Start PostgreSQL
+# 1. Copy and fill in required env vars
+cp .env.example .env
+
+# 2. Start PostgreSQL
 make db
 
-# 2. Start the server (runs migrations automatically)
+# 3. Start the server (runs migrations automatically)
 make serve
-
-# 3. Open the browser
-open http://localhost:8080
 ```
 
-The server automatically runs all database migrations on startup — no manual SQL required.
+The server starts at `http://localhost:8080` (HTTP) and `rtmp://localhost:1935/live` (RTMP).
+
+Migrations run automatically on startup — no manual SQL required.
 
 ### Makefile targets
 
-| Target | Command | Description |
-|---|---|---|
-| `make db` | `docker compose up -d postgres` | Start PostgreSQL in Docker |
-| `make stop` | `docker compose down` | Stop PostgreSQL |
-| `make serve` | `go run ./cmd/server` | Run HTTP + RTMP server |
-| `make dev` | `air` or `go run ./cmd/server` | Live-reload dev server |
-| `make build` | Compiles to `bin/` | Build production binaries |
-| `make transcode INPUT=… OUTPUT=…` | CLI batch transcode | Transcode without the web server |
-| `make clean` | Remove `bin/` and `data/` | Clean build artifacts |
+| Target | Description |
+|---|---|
+| `make db` | Start PostgreSQL in Docker |
+| `make stop` | Stop PostgreSQL |
+| `make serve` | Run HTTP + RTMP server |
+| `make dev` | Live-reload dev server (`air` or `go run`) |
+| `make build` | Compile binaries to `bin/` |
+| `make spec-validate` | Validate `definition/api.yaml` |
+| `make spec-generate` | Regenerate `internal/api/api.gen.go` from spec |
+| `make transcode INPUT=… OUTPUT=…` | CLI batch transcode (no server) |
+| `make clean` | Remove `bin/` and `data/` |
 
 ---
 
 ## 4. Configuration
 
-All configuration is read from environment variables. Default values are safe for local development.
+All config is read from environment variables. Copy `.env.example` to `.env` for local development — the Makefile includes `.env` automatically. Real environment variables always take precedence over `.env`.
+
+The server **refuses to start** if `JWT_SECRET` is the dev default, `GOOGLE_CLIENT_ID` is empty, or `SESSION_COOKIE_SECRET` is shorter than 32 characters.
 
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `8080` | HTTP server port |
 | `DATABASE_URL` | `postgres://philos:philos@localhost:5433/philos_video?sslmode=disable` | PostgreSQL DSN |
-| `DATA_DIR` | `./data` | Root for all video storage (chunks, raw, hls, live) |
+| `DATA_DIR` | `./data` | Root for all video storage |
 | `WORKER_COUNT` | `2` | Concurrent transcode workers |
-| `JWT_SECRET` | `dev-secret-…` | **Must be changed in production.** Min 32 chars. |
-| `JWT_EXPIRY` | `1h` | Playback token lifetime (Go duration format: `30m`, `2h`, etc.) |
+| `JWT_SECRET` | dev default | **Must be changed in production.** Min 32 chars. |
+| `JWT_EXPIRY` | `1h` | Playback token lifetime (Go duration: `30m`, `2h`, etc.) |
 | `RTMP_PORT` | `1935` | RTMP ingest port |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `LOG_FORMAT` | `text` | `text` or `json` |
+| `GOOGLE_CLIENT_ID` | — | Required. Google OAuth 2.0 client ID |
+| `GOOGLE_CLIENT_SECRET` | — | Required. Google OAuth 2.0 client secret |
+| `OAUTH_REDIRECT_URL` | — | Required. Full callback URL (e.g. `https://api.example.com/auth/google/callback`) |
+| `SESSION_COOKIE_SECRET` | — | Required. Min 32 chars, signs the browser session cookie |
+| `SESSION_COOKIE_SECURE` | `false` | Set `true` in production (HTTPS only cookie) |
+| `DEFAULT_UPLOAD_QUOTA_BYTES` | `10737418240` | Per-user upload quota (10 GiB). `0` = unlimited. |
+| `CORS_ORIGINS` | `*` | Comma-separated allowed origins (e.g. `https://app.example.com`) |
+| `GOLIVE_WHITELIST` | — | Comma-separated emails allowed to manage stream keys |
 
 **Production example:**
 
@@ -142,8 +163,13 @@ export DATABASE_URL="postgres://user:pass@db-host:5432/philos_video?sslmode=requ
 export DATA_DIR="/mnt/video-storage"
 export WORKER_COUNT=4
 export JWT_SECRET="$(openssl rand -hex 32)"
-export JWT_EXPIRY="1h"
-export RTMP_PORT=1935
+export JWT_EXPIRY="2h"
+export SESSION_COOKIE_SECRET="$(openssl rand -hex 32)"
+export SESSION_COOKIE_SECURE=true
+export CORS_ORIGINS="https://app.example.com"
+export GOOGLE_CLIENT_ID="…"
+export GOOGLE_CLIENT_SECRET="…"
+export OAUTH_REDIRECT_URL="https://api.example.com/auth/google/callback"
 ./bin/server
 ```
 
@@ -155,40 +181,65 @@ export RTMP_PORT=1935
 philos-video/
 ├── cmd/
 │   ├── server/main.go          # Entry point: wires all components, registers routes
+│   ├── migrate/main.go         # Standalone migration runner (goose)
 │   └── transcode/main.go       # Standalone CLI for batch transcoding
 │
+├── definition/
+│   ├── api.yaml                # OpenAPI 3.0.3 spec (single file, source of truth)
+│   ├── oapi-codegen.yaml       # Code generation config
+│   └── src/                   # Split YAML files (documentation / future bundling)
+│
 ├── internal/
+│   ├── api/api.gen.go          # Generated: types, ServerInterface, HandlerFromMux (do not edit)
+│   │
 │   ├── config/config.go        # Env var parsing → Config struct
 │   ├── database/postgres.go    # sql.Open + Migrate (inlined SQL)
 │   │
 │   ├── models/models.go        # All DB-facing structs + status constants
 │   │
 │   ├── repository/             # One file per DB table
+│   │   ├── user_repo.go
 │   │   ├── video_repo.go
 │   │   ├── upload_repo.go
 │   │   ├── job_repo.go
 │   │   ├── session_repo.go
-│   │   ├── event_repo.go       # Also defines nil-helper functions ns/ni/ni64/nf64
+│   │   ├── event_repo.go
 │   │   ├── stream_key_repo.go
-│   │   └── live_stream_repo.go
+│   │   ├── live_stream_repo.go
+│   │   ├── comment_repo.go
+│   │   └── chat_message_repo.go
 │   │
 │   ├── service/                # Business logic (no HTTP, no SQL)
 │   │   ├── video_service.go
 │   │   ├── upload_service.go
 │   │   ├── transcode_service.go
-│   │   └── session_service.go  # JWT generation + PlaybackClaims struct
+│   │   ├── session_service.go  # JWT generation + PlaybackClaims struct
+│   │   ├── comment_service.go
+│   │   ├── chat_hub.go         # In-memory fan-out for live chat SSE
+│   │   ├── oauth_service.go    # Google OAuth exchange + user info fetch
+│   │   └── user_session_service.go  # Browser session cookie (JWT)
 │   │
-│   ├── handler/                # HTTP handlers (parse request → call service → encode response)
-│   │   ├── upload_handler.go
-│   │   ├── video_handler.go
-│   │   ├── session_handler.go
-│   │   ├── telemetry_handler.go
-│   │   ├── dashboard_handler.go
-│   │   ├── stream_key_handler.go
-│   │   ├── live_handler.go
-│   │   └── page_handler.go     # HTML template rendering
+│   ├── server/                 # Implements api.ServerInterface (one file per domain)
+│   │   ├── server.go           # Server struct + Params + New()
+│   │   ├── errors.go           # writeJSON, writeError, decodeJSON helpers
+│   │   ├── health.go           # GetHealth, GetHealthReady
+│   │   ├── auth.go             # GetMe, Logout, GoogleLoginHandler, GoogleCallbackHandler
+│   │   ├── video.go            # ListVideos, GetVideo, GetVideoStatus, DeleteVideo, UpdateVideo
+│   │   ├── upload.go           # InitUpload, ReceiveChunk, GetUploadStatus, UploadThumbnail
+│   │   ├── session.go          # CreateVideoSession, CreateLiveSession
+│   │   ├── comment.go          # ListComments, AddComment, DeleteComment
+│   │   ├── live.go             # ListLiveStreams, GetLiveStream, GetLiveViewers, EndLiveStream
+│   │   ├── chat.go             # SendChatMessage, ChatStream (SSE), ListChatMessages
+│   │   ├── stream_key.go       # ListStreamKeys, CreateStreamKey, DeactivateStreamKey, UpdateStreamKey
+│   │   └── telemetry.go        # PostTelemetryEvents
 │   │
-│   ├── middleware/auth.go      # JWT validation middleware (VOD + live)
+│   ├── middleware/             # HTTP middleware
+│   │   ├── auth.go             # JWT validation for HLS file serving (VOD + live)
+│   │   ├── auth_user.go        # User session middleware (OptionalUser, RequireUser, RequireUserAPI)
+│   │   ├── golive_gate.go      # GOLIVE_WHITELIST check (used inside stream key handlers)
+│   │   ├── metrics_mw.go       # Prometheus HTTP metrics middleware
+│   │   ├── ratelimit.go        # Per-IP fixed-window rate limiter
+│   │   └── request_id.go       # X-Request-ID injection
 │   │
 │   ├── live/                   # RTMP ingest + live transcoding
 │   │   ├── rtmp_server.go      # go-rtmp server wrapper
@@ -204,32 +255,21 @@ philos-video/
 │   │   └── manifest.go
 │   │
 │   ├── worker/transcode_worker.go  # Goroutine pool reading job channel
-│   │
-│   ├── qoe/aggregator.go       # In-memory 5-min sliding window QoE metrics
-│   │
-│   └── web/
-│       ├── embed.go            # //go:embed templates → web.Templates
-│       └── templates/
-│           ├── library.html    # Video library + live section
-│           ├── upload.html     # Chunked upload UI
-│           ├── player.html     # VOD HLS.js player + TelemetryClient
-│           ├── dashboard.html  # Real-time QoE dashboard (SSE)
-│           ├── go_live.html    # Stream key management + OBS guide
-│           └── watch_live.html # Live HLS.js player
-│
-├── migrations/                 # Documentation-only SQL (inlined in database/postgres.go)
-│   ├── 001_initial.sql
-│   ├── 002_sessions_and_events.sql
-│   └── 003_live_streaming.sql
+│   ├── watchdog/watchdog.go    # Detects stuck FFmpeg processes + stalled jobs
+│   ├── health/health.go        # Liveness + readiness checks
+│   ├── metrics/metrics.go      # Prometheus metric definitions + system collector
+│   └── logging/logging.go      # slog setup (level + format from config)
 │
 ├── data/                       # Runtime-generated, gitignored
 │   ├── chunks/{upload_id}/     # Raw uploaded chunks (deleted after assembly)
 │   ├── raw/{upload_id}/        # Assembled input file (deleted after transcode)
 │   ├── hls/{video_id}/         # Final VOD output served at /videos/{id}/…
-│   └── live/{stream_id}/       # Live HLS output served at /live/{id}/…
+│   ├── live/{stream_id}/       # Live HLS output served at /live/{id}/…
+│   └── thumbnails/             # Uploaded thumbnail images
 │
 ├── go.mod / go.sum
 ├── Makefile
+├── CLAUDE.md
 └── docker-compose.yml          # postgres:15 on port 5433
 ```
 
@@ -237,134 +277,194 @@ philos-video/
 
 ```
 data/
-├── chunks/
-│   └── {upload_id}/
-│       ├── 00000           ← raw chunk bytes
-│       ├── 00001
-│       └── ...
-├── raw/
-│   └── {upload_id}/
-│       └── original.mp4    ← assembled file (deleted after transcode)
-├── hls/
-│   └── {video_id}/
-│       ├── master.m3u8     ← served at /videos/{video_id}/master.m3u8
-│       ├── 720p/
-│       │   ├── playlist.m3u8
-│       │   ├── init.mp4    ← fMP4 init segment
-│       │   └── segment_0000.m4s ...
-│       ├── 480p/ ...
-│       └── 360p/ ...
-└── live/
-    └── {stream_id}/
-        ├── master.m3u8     ← pre-written at stream start
-        ├── 720p/
-        │   ├── playlist.m3u8  ← sliding window (5 segments)
-        │   └── segment_0000.ts ...
-        ├── 480p/ ...
-        └── 360p/ ...
+├── chunks/{upload_id}/
+│   ├── 00000           ← raw chunk bytes
+│   ├── 00001
+│   └── ...
+├── raw/{upload_id}/
+│   └── original.mp4    ← assembled file (deleted after transcode)
+├── hls/{video_id}/
+│   ├── master.m3u8     ← served at /videos/{video_id}/master.m3u8
+│   ├── 720p/
+│   │   ├── playlist.m3u8
+│   │   ├── init.mp4    ← fMP4 init segment
+│   │   └── segment_0000.m4s ...
+│   ├── 480p/ ...
+│   └── 360p/ ...
+├── live/{stream_id}/
+│   ├── master.m3u8     ← pre-written at stream start
+│   ├── 720p/
+│   │   ├── playlist.m3u8  ← sliding window (5 segments)
+│   │   └── segment_0000.ts ...
+│   ├── 480p/ ...
+│   └── 360p/ ...
+└── thumbnails/
+    └── {upload_id}.jpg
 ```
 
 ---
 
-## 6. Database Schema
+## 6. OpenAPI Workflow
 
-Migrations are managed by [goose](https://github.com/pressly/goose) and live in `internal/database/migrations/`. They are embedded into the binary at build time (`//go:embed migrations/*.sql`) and applied automatically on startup via `database.Migrate(db)`.
+The API contract lives in `definition/api.yaml` (OpenAPI 3.0.3). Code generation via `oapi-codegen` produces `internal/api/api.gen.go` which contains all model types, the `ServerInterface` (30 methods), and `HandlerFromMux` for automatic chi route registration.
+
+**Never edit `internal/api/api.gen.go` by hand** — it is always regenerated from the spec.
+
+### Adding a new endpoint
+
+1. **Edit `definition/api.yaml`** — add the path, method, request/response schemas
+2. **Regenerate:** `make spec-generate`
+3. **Implement:** add the new method to the appropriate file in `internal/server/`
+
+```bash
+# After editing definition/api.yaml:
+make spec-validate  # catch spec errors early
+make spec-generate  # regenerates internal/api/api.gen.go
+# The compiler will now report missing interface methods — implement them
+```
+
+### Code generation config (`definition/oapi-codegen.yaml`)
+
+```yaml
+package: api
+generate:
+  - types
+  - chi-server
+output: ../internal/api/api.gen.go
+```
+
+### Generated artifacts
+
+- **Model types** — Go structs for all request/response schemas (e.g. `Video`, `User`, `ChatMessage`)
+- **`ServerInterface`** — 30-method interface that `*server.Server` must implement
+- **`HandlerFromMux(si ServerInterface, r chi.Router)`** — registers all routes on a chi router
+- **`ServerInterfaceWrapper`** — adapts the interface to chi's handler signature, extracts path/query params
+
+### Path parameter extraction
+
+oapi-codegen extracts path parameters from the chi URL context and passes them as typed function arguments. **Do not** use `chi.URLParam(r, "id")` in handlers — they arrive as direct arguments:
+
+```go
+// Generated interface method:
+GetVideo(w http.ResponseWriter, r *http.Request, id string)
+
+// Implementation — id is already extracted:
+func (s *Server) GetVideo(w http.ResponseWriter, r *http.Request, id string) {
+    video, err := s.videoSvc.GetByID(r.Context(), id)
+    ...
+}
+```
+
+### Query parameter structs
+
+Query parameters arrive as typed structs defined in the spec:
+
+```go
+// Generated:
+type ListVideosParams struct {
+    Limit  *int    `form:"limit"`
+    Offset *int    `form:"offset"`
+    Status *string `form:"status"`
+}
+
+// Implementation:
+func (s *Server) ListVideos(w http.ResponseWriter, r *http.Request, params api.ListVideosParams) {
+    limit := 20
+    if params.Limit != nil { limit = *params.Limit }
+    ...
+}
+```
+
+---
+
+## 7. Database Schema
+
+Schema is managed by [goose](https://github.com/pressly/goose) migrations in `internal/database/migrations/`. They are embedded into the binary at build time and applied automatically on startup.
 
 ### Managing migrations
 
 | Command | Description |
 |---|---|
 | `make migrate-up` | Apply all pending migrations |
-| `make migrate-down` | Roll back the last applied migration |
-| `make migrate-status` | Show which migrations are applied / pending |
+| `make migrate-down` | Roll back the last migration |
+| `make migrate-status` | Show applied / pending migrations |
 | `make migrate-new name=<name>` | Scaffold a new numbered SQL migration file |
 
-`DATABASE_URL` is read from `.env` automatically by the Makefile (via `-include .env`), so no manual `export` is needed.
+### `users`
 
-**Creating a migration:**
-```bash
-make migrate-new name=add_thumbnail_url
-# → internal/database/migrations/00002_add_thumbnail_url.sql
-```
-
-Edit the generated file — fill in the `-- +goose Up` block (forward SQL) and the `-- +goose Down` block (rollback SQL), then run `make migrate-up`.
-
-**Migration file format:**
 ```sql
--- +goose Up
-ALTER TABLE videos ADD COLUMN thumbnail_url TEXT;
-
--- +goose Down
-ALTER TABLE videos DROP COLUMN thumbnail_url;
+id                   TEXT PRIMARY KEY          -- usr_{hex}
+google_sub           TEXT UNIQUE NOT NULL      -- Google subject identifier
+email                TEXT NOT NULL
+name                 TEXT NOT NULL
+picture              TEXT                      -- Google profile picture URL
+upload_quota_bytes   BIGINT NOT NULL DEFAULT 10737418240  -- 10 GiB
+used_bytes           BIGINT NOT NULL DEFAULT 0
+created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 ```
-
-> **On startup:** `database.Migrate()` calls `goose.Up()`, which is a no-op if the schema is already current. Migration state is tracked in the `goose_db_version` table.
 
 ### `videos`
-Primary record for a video asset. Created at upload, updated through the transcode pipeline.
 
 ```sql
-id         TEXT PRIMARY KEY              -- same as upload_id (e.g. random hex)
-title      TEXT NOT NULL                 -- original filename or user-provided title
-status     TEXT NOT NULL DEFAULT 'uploading'
-           -- uploading → processing → ready | failed
-width      INT                           -- set after probe
-height     INT
-duration   TEXT                          -- e.g. "00:03:47.00"
-codec      TEXT                          -- e.g. "h264"
-hls_path   TEXT                          -- relative path from DATA_DIR
-           -- VOD:  "hls/{video_id}"
-           -- Live recording: "live/{stream_id}"
-created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+id           TEXT PRIMARY KEY              -- same as upload_id (hex)
+user_id      TEXT REFERENCES users(id)
+title        TEXT NOT NULL
+visibility   TEXT NOT NULL DEFAULT 'public'  -- public | private
+status       TEXT NOT NULL DEFAULT 'uploading'
+             -- uploading → processing → ready | failed
+width        INT
+height       INT
+duration     TEXT                          -- e.g. "00:03:47.00"
+codec        TEXT
+hls_path     TEXT                          -- relative from DATA_DIR
+thumbnail    TEXT                          -- relative path in thumbnails/
+view_count   BIGINT NOT NULL DEFAULT 0
+created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 ```
 
 ### `upload_chunks`
-Tracks which chunks of a chunked upload have been received.
 
 ```sql
-upload_id    TEXT                        -- matches video.id
+upload_id    TEXT                          -- matches videos.id
 chunk_number INT
 received     BOOLEAN NOT NULL DEFAULT FALSE
 PRIMARY KEY (upload_id, chunk_number)
 ```
 
 ### `transcode_jobs`
-One job per video, tracks FFmpeg progress.
 
 ```sql
 id         TEXT PRIMARY KEY
 video_id   TEXT NOT NULL REFERENCES videos(id)
-status     TEXT NOT NULL DEFAULT 'queued'
-           -- queued → running → completed | failed
-stage      TEXT                         -- current FFmpeg stage name
-progress   DOUBLE PRECISION DEFAULT 0   -- 0.0–1.0
-error      TEXT                         -- error message if failed
+status     TEXT NOT NULL DEFAULT 'queued'  -- queued → running → completed | failed
+stage      TEXT                            -- current FFmpeg stage name
+progress   DOUBLE PRECISION DEFAULT 0      -- 0.0 – 1.0
+error      TEXT
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 ```
 
-**Progress milestones:** `probe=0.05`, `prepare=0.10`, `encode per profile 0.10–0.80`, `segment=0.85`, `packaging=0.95`, `done=1.0`
+Progress milestones: `probe=0.05`, `prepare=0.10`, `encode per profile 0.10–0.80`, `segment=0.85`, `packaging=0.95`, `done=1.0`
 
 ### `playback_sessions`
-Created when a viewer clicks play. Stores the JWT token and tracks activity.
 
 ```sql
-id             TEXT PRIMARY KEY          -- sess_{hex}
-video_id       TEXT REFERENCES videos(id) -- nullable (null for live sessions)
-stream_id      TEXT                      -- set for live sessions
-token          TEXT NOT NULL             -- the JWT string
-device_type    TEXT                      -- mobile | tablet | desktop
+id             TEXT PRIMARY KEY           -- sess_{hex}
+video_id       TEXT REFERENCES videos(id) -- null for live
+stream_id      TEXT                       -- set for live sessions
+token          TEXT NOT NULL
+device_type    TEXT
 user_agent     TEXT
 ip_address     TEXT
 started_at     TIMESTAMPTZ DEFAULT NOW()
-last_active_at TIMESTAMPTZ DEFAULT NOW() -- debounced: updated at most every 30s
-ended_at       TIMESTAMPTZ               -- set on playback_end event
-status         TEXT DEFAULT 'active'     -- active | ended
+last_active_at TIMESTAMPTZ DEFAULT NOW()  -- debounced: updated at most every 30s
+ended_at       TIMESTAMPTZ
+status         TEXT DEFAULT 'active'      -- active | ended
 ```
 
 ### `playback_events`
-Time-series event log from each player. High-volume; indexed for range queries.
 
 ```sql
 id                   BIGSERIAL PRIMARY KEY
@@ -372,111 +472,172 @@ session_id           TEXT NOT NULL REFERENCES playback_sessions(id)
 video_id             TEXT NOT NULL
 event_type           TEXT NOT NULL
   -- playback_start, segment_downloaded, quality_change,
-  -- rebuffer_start, rebuffer_end, heartbeat, playback_end
+  -- rebuffer_start, rebuffer_end, heartbeat, playback_end, playback_error
 timestamp            TIMESTAMPTZ DEFAULT NOW()
 segment_number       INTEGER
-segment_quality      TEXT         -- 720p | 480p | 360p
+segment_quality      TEXT          -- 720p | 480p | 360p
 segment_bytes        BIGINT
 download_time_ms     INTEGER
-throughput_bps       BIGINT       -- bytes*8 / download_time_seconds
-current_quality      TEXT         -- from heartbeat
-buffer_length        DOUBLE PRECISION  -- seconds ahead
-playback_position    DOUBLE PRECISION  -- current time in video
+throughput_bps       BIGINT
+current_quality      TEXT
+buffer_length        DOUBLE PRECISION
+playback_position    DOUBLE PRECISION
 rebuffer_duration_ms INTEGER
 quality_from         TEXT
 quality_to           TEXT
 error_code           TEXT
 error_message        TEXT
 
--- Indexes:
---   idx_playback_events_session   ON (session_id)
---   idx_playback_events_type_time ON (event_type, timestamp)
---   idx_playback_events_video     ON (video_id, timestamp)
+-- Indexes: session_id, (event_type, timestamp), (video_id, timestamp)
 ```
 
 ### `stream_keys`
-Credentials for RTMP publishing. OBS uses the `id` as the stream key.
 
 ```sql
-id         TEXT PRIMARY KEY   -- sk_{8 random hex bytes}
-user_label TEXT NOT NULL      -- human-readable name
-is_active  BOOLEAN DEFAULT TRUE
-created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+id           TEXT PRIMARY KEY    -- sk_{hex}
+user_id      TEXT REFERENCES users(id)
+user_label   TEXT NOT NULL
+is_active    BOOLEAN DEFAULT TRUE
+record_vod   BOOLEAN DEFAULT TRUE
+created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 ```
 
 ### `live_streams`
-One record per RTMP ingest session.
 
 ```sql
-id            TEXT PRIMARY KEY      -- ls_{8 random hex bytes}
+id            TEXT PRIMARY KEY       -- ls_{hex}
 stream_key_id TEXT NOT NULL REFERENCES stream_keys(id)
-title         TEXT NOT NULL         -- defaults to stream_key.user_label
-status        TEXT DEFAULT 'waiting'
-              -- waiting → live → ended
-source_width  INT                   -- set when RTMP announces resolution
+user_id       TEXT REFERENCES users(id)
+title         TEXT NOT NULL
+status        TEXT DEFAULT 'waiting'  -- waiting → live → ended
+source_width  INT
 source_height INT
 source_codec  TEXT
 source_fps    TEXT
-hls_path      TEXT                  -- "live/{stream_id}" (relative to DATA_DIR)
-video_id      TEXT                  -- set when VOD recording is created on stream end
+hls_path      TEXT
+video_id      TEXT                    -- set when VOD recording is created
 started_at    TIMESTAMPTZ
 ended_at      TIMESTAMPTZ
 created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
--- Indexes:
---   idx_live_streams_status     ON (status)
---   idx_live_streams_stream_key ON (stream_key_id)
+-- Indexes: status, stream_key_id
+```
+
+### `comments`
+
+```sql
+id         TEXT PRIMARY KEY    -- cmt_{hex}
+video_id   TEXT NOT NULL REFERENCES videos(id)
+user_id    TEXT REFERENCES users(id)
+user_name  TEXT NOT NULL
+picture    TEXT
+body       TEXT NOT NULL
+created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+```
+
+### `chat_messages`
+
+```sql
+id          TEXT PRIMARY KEY    -- chat_{hex}
+stream_id   TEXT NOT NULL
+user_id     TEXT REFERENCES users(id)
+user_name   TEXT NOT NULL
+picture     TEXT
+body        TEXT NOT NULL
+created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+
+-- Index: (stream_id, created_at)
 ```
 
 ---
 
-## 7. HTTP API Reference
+## 8. HTTP API Reference
+
+All API endpoints are defined in `definition/api.yaml` and accessible via the generated chi routes. JSON request/response unless noted.
+
+### Auth
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/auth/google/login` | — | Redirect to Google OAuth consent page |
+| `GET` | `/auth/google/callback` | — | OAuth callback; sets session cookie; redirects |
+| `POST` | `/auth/logout` | optional | Clear session cookie |
+| `GET` | `/api/v1/me` | required | Current user info |
+
+`GET /api/v1/me` response:
+```json
+{
+  "id": "usr_abc123",
+  "email": "user@example.com",
+  "name": "Alice",
+  "picture": "https://…",
+  "used_bytes": 1073741824,
+  "upload_quota_bytes": 10737418240
+}
+```
+
+### Health
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Liveness: always `200 OK` if process is running |
+| `GET` | `/health/ready` | Readiness: checks DB, FFmpeg, disk, RTMP port |
 
 ### Upload
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `POST` | `/api/v1/uploads` | `upload.InitUpload` | Start a new chunked upload |
-| `PUT` | `/api/v1/uploads/{upload_id}/chunks/{chunk_number}` | `upload.ReceiveChunk` | Send one chunk (raw body) |
-| `GET` | `/api/v1/uploads/{upload_id}/status` | `upload.GetStatus` | `{"received":3,"total":5}` |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/uploads` | required | Initialise chunked upload |
+| `PUT` | `/api/v1/uploads/{upload_id}/chunks/{chunk_number}` | required | Send one raw chunk |
+| `GET` | `/api/v1/uploads/{upload_id}/status` | required | `{"received":3,"total":5}` |
+| `POST` | `/api/v1/uploads/{upload_id}/thumbnail` | required | Upload thumbnail (multipart/form-data, field: `thumbnail`) |
 
-**InitUpload request body:**
+`POST /api/v1/uploads` request:
 ```json
-{ "filename": "video.mp4", "total_chunks": 5 }
+{
+  "filename": "video.mp4",
+  "title": "My Video",
+  "visibility": "public",
+  "total_chunks": 12,
+  "file_size": 62914560
+}
 ```
-**InitUpload response:**
+Response: `201 Created`
 ```json
-{ "upload_id": "a1b2c3d4e5f6..." }
+{ "upload_id": "a1b2c3d4", "total_chunks": 12 }
 ```
 
 ### Videos
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `GET` | `/api/v1/videos` | `video.ListVideos` | Array of all videos (desc by `created_at`) |
-| `GET` | `/api/v1/videos/{id}` | `video.GetVideo` | Single video record |
-| `GET` | `/api/v1/videos/{id}/status` | `video.GetVideoStatus` | Video + job + progress (`0.0–1.0`) |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/videos` | optional | List videos. Query: `?limit=20&offset=0&status=ready` |
+| `GET` | `/api/v1/videos/{id}` | optional | Single video record |
+| `GET` | `/api/v1/videos/{id}/status` | optional | Video + job + progress (0.0–1.0) |
+| `DELETE` | `/api/v1/videos/{id}` | required | Delete video + all HLS files |
+| `PATCH` | `/api/v1/videos/{id}` | required | Update `title` or `visibility` |
 
-**GetVideoStatus response:**
+`GET /api/v1/videos/{id}/status` response:
 ```json
 {
-  "video": { "id": "…", "title": "…", "status": "processing", … },
-  "job":   { "id": "…", "status": "running", "stage": "encode:720p", "progress": 0.35 },
+  "video":    { "id": "…", "title": "…", "status": "processing", … },
+  "job":      { "id": "…", "status": "running", "stage": "encode:720p", "progress": 0.35 },
   "progress": 0.35
 }
 ```
 
-### Playback Sessions (VOD)
+### Playback Sessions
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `POST` | `/api/v1/videos/{id}/sessions` | `session.CreateSession` | Validate video is ready, create JWT-backed session |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/videos/{id}/sessions` | optional | Create JWT session for VOD playback |
+| `POST` | `/api/v1/live/{stream_id}/sessions` | optional | Create JWT session for live playback |
 
-**Request body:**
+Request body (both):
 ```json
 { "device_type": "desktop", "user_agent": "optional override" }
 ```
-**Response:**
+Response `201 Created`:
 ```json
 {
   "session_id":       "sess_abc123",
@@ -489,425 +650,280 @@ created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
 ### Telemetry
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `POST` | `/api/v1/sessions/{session_id}/events` | `telemetry.PostEvents` | Batch ingest playback events |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/sessions/{session_id}/events` | — | Batch-insert playback events (session-validated) |
 
-**Request body:**
+Request body (up to 1000 events per batch):
 ```json
 {
   "events": [
-    {
-      "event_type": "heartbeat",
-      "timestamp": "2025-03-10T12:00:00Z",
-      "current_quality": "720p",
-      "buffer_length": 8.5,
-      "playback_position": 45.2
-    },
-    {
-      "event_type": "segment_downloaded",
-      "segment_number": 12,
-      "segment_quality": "720p",
-      "segment_bytes": 524288,
-      "download_time_ms": 210,
-      "throughput_bps": 19999390
-    }
+    { "event_type": "heartbeat", "current_quality": "720p", "buffer_length": 8.5 },
+    { "event_type": "quality_change", "quality_from": "720p", "quality_to": "480p" }
   ]
 }
 ```
 
-**Event types and their fields:**
+Event types: `playback_start`, `segment_downloaded`, `quality_change`, `rebuffer_start`, `rebuffer_end`, `heartbeat`, `playback_end`, `playback_error`
 
-| event_type | Key fields |
-|---|---|
-| `playback_start` | `download_time_ms` (TTFF), `buffer_length` |
-| `segment_downloaded` | `segment_number`, `segment_quality`, `segment_bytes`, `download_time_ms`, `throughput_bps` |
-| `quality_change` | `quality_from`, `quality_to` |
-| `rebuffer_start` | *(no extra fields)* |
-| `rebuffer_end` | `rebuffer_duration_ms` |
-| `heartbeat` | `current_quality`, `buffer_length`, `playback_position` |
-| `playback_end` | *(marks session ended)* |
+### Comments
 
-### Dashboard
-
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `GET` | `/api/v1/dashboard/stats` | `dashboard.GetStats` | One-shot JSON metrics snapshot |
-| `GET` | `/api/v1/dashboard/stats/stream` | `dashboard.StatsStream` | SSE stream (`text/event-stream`), 1 update/second |
-
-**DashboardMetrics fields:**
-
-| Field | Type | Description |
-|---|---|---|
-| `timestamp` | RFC3339 | When snapshot was computed |
-| `active_sessions` | int | Sessions with heartbeat in last 60s |
-| `total_sessions_5m` | int | Unique sessions in 5-minute window |
-| `ttff_median_ms` | int | Median Time-To-First-Frame |
-| `ttff_p95_ms` | int | p95 Time-To-First-Frame |
-| `rebuffer_rate` | float | Fraction of sessions with a rebuffer (0.0–1.0) |
-| `avg_rebuffer_duration_ms` | int | Average rebuffer duration |
-| `avg_bitrate_kbps` | float | Quality-weighted average bitrate |
-| `quality_distribution` | map | `{"720p":0.6,"480p":0.3,"360p":0.1}` |
-| `quality_switches_per_min` | float | Quality changes / 5 minutes |
-| `avg_throughput_mbps` | float | Mean segment download speed |
-| `p10_throughput_mbps` | float | Worst 10th percentile throughput |
-| `per_video` | array | Top 10 videos by active sessions |
-| `active_live_streams` | int | Currently transcoding RTMP streams |
-
-### Stream Keys
-
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `POST` | `/api/v1/stream-keys` | `streamkey.Create` | Create new key `{"label":"…"}` |
-| `GET` | `/api/v1/stream-keys` | `streamkey.List` | List all keys |
-| `DELETE` | `/api/v1/stream-keys/{id}` | `streamkey.Deactivate` | Revoke a key (`204 No Content`) |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/videos/{video_id}/comments` | optional | List comments. Query: `?limit=20&offset=0` |
+| `POST` | `/api/v1/videos/{video_id}/comments` | required | Add comment `{"body":"…"}` |
+| `DELETE` | `/api/v1/videos/{video_id}/comments/{comment_id}` | required | Delete own comment |
 
 ### Live Streams
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| `GET` | `/api/v1/live` | `live.ListLive` | All streams with `status=live` |
-| `GET` | `/api/v1/live/{stream_id}` | `live.GetStream` | Single live stream record |
-| `POST` | `/api/v1/live/{stream_id}/sessions` | `live.CreateSession` | JWT session for HLS access |
-| `POST` | `/api/v1/live/{stream_id}/end` | `live.EndStream` | Manually end stream + trigger VOD |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/v1/live` | — | List all live streams |
+| `GET` | `/api/v1/live/{stream_id}` | — | Single live stream record |
+| `GET` | `/api/v1/live/{stream_id}/viewers` | — | `{"count": 42}` |
+| `POST` | `/api/v1/live/{stream_id}/end` | required (owner) | Manually end stream + trigger VOD |
 
-### File Serving (JWT-Protected)
+### Live Chat
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/live/{stream_id}/chat` | required | Send message `{"body":"…"}` |
+| `GET` | `/api/v1/live/{stream_id}/chat/stream` | — | SSE stream (`text/event-stream`): history on connect, then new messages |
+| `GET` | `/api/v1/live/{stream_id}/chat` | — | List recent messages. Query: `?limit=50` |
+
+The SSE stream sends an initial `data:` event with `{"history":[…]}`, then individual `ChatMessage` objects as they arrive. A `heartbeat` comment is sent every 30s.
+
+### Stream Keys
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/stream-keys` | required + whitelist | Create key `{"label":"OBS","record_vod":true}` |
+| `GET` | `/api/v1/stream-keys` | required + whitelist | List active keys |
+| `DELETE` | `/api/v1/stream-keys/{id}` | required + whitelist | Deactivate key |
+| `PATCH` | `/api/v1/stream-keys/{id}` | required + whitelist | Update `record_vod` |
+
+Stream key endpoints require the authenticated user's email to be in `GOLIVE_WHITELIST`.
+
+### File Serving (Not in OpenAPI spec — manually registered)
 
 | Pattern | Auth check | Serves from |
 |---|---|---|
-| `GET /videos/{id}/…` | JWT `vid` claim == `{id}` | `{DATA_DIR}/hls/{id}/` |
-| `GET /live/{id}/…` | JWT `stid` claim == `{id}` | `{DATA_DIR}/live/{id}/` |
+| `GET /thumbnails/*` | None | `{DATA_DIR}/thumbnails/` |
+| `GET /videos/*` | JWT `vid` claim == path segment | `{DATA_DIR}/hls/` |
+| `GET /live/*` | JWT `stid` claim == path segment | `{DATA_DIR}/live/` |
 
-Token must be passed as `?token=<jwt>` query parameter on every request. Live routes also send `Cache-Control: no-cache, no-store`.
+Token must be passed as `?token=<jwt>` on every HLS request. Live routes add `Cache-Control: no-cache`.
 
 ---
 
-## 8. Authentication & Authorization
+## 9. Authentication & Authorization
 
-### JWT Token Structure
+### Google OAuth flow
 
-All playback tokens are HS256-signed JWTs. Claims:
+```
+Client → GET /auth/google/login
+      ← 302 redirect to Google consent page
+
+Google → GET /auth/google/callback?code=…&state=…
+Server:  Exchange code for tokens
+         Fetch user profile (email, name, picture)
+         Upsert user record (users table)
+         Sign browser session cookie (HS256 JWT)
+      ← 302 redirect to / (or ?return= param)
+```
+
+The session cookie contains a short JWT with `{user_id}`. `UserAuthMiddleware.OptionalUser` validates the cookie on every request and populates `ctx` — all handlers call `middleware.CurrentUser(ctx)` to retrieve the user.
+
+### Playback JWT structure
 
 ```json
 {
-  "jti":  "sess_abc123",    // JWT ID = session ID
+  "jti":  "sess_abc123",
   "iat":  1710000000,
   "exp":  1710003600,
-  "sid":  "sess_abc123",    // session ID (always present)
-  "vid":  "a1b2c3…",        // video ID (VOD only)
-  "stid": "ls_d4e5f6…"      // stream ID (live only)
+  "sid":  "sess_abc123",   -- session ID
+  "vid":  "a1b2c3…",       -- video ID (VOD sessions only)
+  "stid": "ls_d4e5f6…"     -- stream ID (live sessions only)
 }
 ```
 
-### Auth Flow
+The HLS auth middleware (`internal/middleware/auth.go`) validates the JWT on every file request and asserts that the claimed `vid`/`stid` matches the path segment — a VOD token cannot be used for a different video or any live stream.
 
-```
-Client:  POST /api/v1/videos/{id}/sessions
-Server:  Validate video.status == "ready"
-         Create PlaybackSession record
-         Sign JWT with {sid, vid} + expiry
-         Return token + manifest URL
+### User auth middleware levels
 
-Client:  GET /videos/{id}/master.m3u8?token=<jwt>
-Middleware: Parse JWT → extract claims
-            Check claims.VideoID == path ID
-            Touch session.last_active_at (debounced 30s)
-            Pass to file server
-```
+| Method | Behaviour |
+|---|---|
+| `OptionalUser` | Populates user context if cookie is valid; passes through even if not signed in |
+| `RequireUser` | Redirects to `/auth/google/login` if not signed in (for UI routes) |
+| `RequireUserAPI` | Returns `401 Unauthorized` JSON if not signed in (for API routes) |
 
-The same flow applies to live streams using `stid` and `/live/{stream_id}/`.
-
-### Middleware (`internal/middleware/auth.go`)
-
-```go
-// For VOD routes:
-mux.Handle("GET /videos/", authMiddleware.RequirePlaybackToken(hlsHandler))
-
-// For live routes:
-mux.Handle("GET /live/", authMiddleware.RequireLiveToken(liveHLSHandler))
-```
-
-Both methods validate the JWT, extract the resource ID from the URL path, and compare it against the claim.
+In the current setup, `OptionalUser` is applied globally via chi middleware. Handlers that require auth call `middleware.CurrentUser(ctx)` and return `401` if nil.
 
 ---
 
-## 9. VOD Pipeline
+## 10. VOD Pipeline
 
-### Upload Phase
+### Upload phase
 
-1. Client calls `POST /api/v1/uploads` → server creates `videos` and `upload_chunks` records, returns `upload_id`.
-2. Client splits file into 5 MB chunks, sends each via `PUT /api/v1/uploads/{id}/chunks/{n}`.
-3. Each chunk is written to `data/chunks/{upload_id}/{n}`.
-4. When last chunk lands, `UploadService.assemble()` runs in a goroutine:
+1. Client calls `POST /api/v1/uploads` → server creates `videos` and `upload_chunks` records, returns `upload_id`
+2. Client splits file into chunks (any size up to 256 MiB each), sends via `PUT …/chunks/{n}` (raw body, `application/octet-stream`)
+3. Each chunk is written to `data/chunks/{upload_id}/{n}`
+4. When the last chunk lands, `UploadService.assemble()` runs in a goroutine:
    - Concatenates all chunks in order → `data/raw/{upload_id}/original.{ext}`
    - Deletes chunk files
    - Creates `TranscodeJob` record (status=queued)
    - Sends `job_id` to the worker channel
 
-### Transcode Phase
+### Transcode phase
 
 The `TranscodeWorker` goroutine pool reads from the job channel:
 
-1. **Probe** (`internal/transcoder/probe.go`): `ffprobe -print_format json -show_streams -show_format` → extracts width, height, codec, duration.
-2. **Build Ladder** (`internal/transcoder/ladder.go`): filters the 3-profile ladder to only include resolutions ≤ source.
+1. **Probe** (`internal/transcoder/probe.go`): runs `ffprobe -print_format json -show_streams -show_format` → extracts width, height, codec, duration
+2. **Build Ladder** (`internal/transcoder/ladder.go`): filters the 3-profile ladder to only include resolutions ≤ source
 3. **Per profile** (`internal/transcoder/encode.go` + `segment.go`):
-   - Encode: `ffmpeg … -c:v libx264 -preset medium -movflags +faststart` → `data/hls/{id}/{profile}/intermediate.mp4`
-   - Segment: `ffmpeg -c copy -f hls -hls_segment_type fmp4 -hls_time 4` → `data/hls/{id}/{profile}/playlist.m3u8` + segments
+   - Encode: `ffmpeg … -c:v libx264 -preset medium` → `data/hls/{id}/{profile}/intermediate.mp4`
+   - Segment: `ffmpeg -f hls -hls_segment_type fmp4 -hls_time 4` → playlist + `.m4s` segments
    - Delete `intermediate.mp4`
-4. **Master Manifest** (`internal/transcoder/manifest.go`): `data/hls/{id}/master.m3u8`
-5. Update `videos.hls_path`, `videos.status = ready`, job status = completed.
+4. **Master Manifest** (`internal/transcoder/manifest.go`): writes `data/hls/{id}/master.m3u8`
+5. Updates `videos.status = ready`, `videos.hls_path`, job status = completed
 
-### Encoding Ladder
+### Encoding ladder
 
-| Profile | Resolution | Video bitrate | Audio | MaxRate |
-|---------|-----------|--------------|-------|---------|
+| Profile | Resolution | Video | Audio | MaxRate |
+|---------|-----------|-------|-------|---------|
 | 720p | 1280×720 | 2500 kbps | 128 kbps | 2500 kbps |
 | 480p | 854×480 | 1000 kbps | 96 kbps | 1000 kbps |
 | 360p | 640×360 | 400 kbps | 64 kbps | 400 kbps |
 
-Profiles whose height exceeds the source height are skipped. E.g., a 480p source only gets the 480p and 360p profiles.
+Profiles whose height exceeds the source height are skipped.
 
 ### Serving VOD
 
-The `hls/` directory is served by `http.FileServer` with:
-- MIME types set by `mimeHandler`: `.m3u8 → application/vnd.apple.mpegurl`, `.m4s → video/iso.bmff`, `.mp4 → video/mp4`
+`http.FileServer` serves `data/hls/` with:
+- MIME types set for `.m3u8` → `application/vnd.apple.mpegurl`, `.m4s` → `video/iso.bmff`
 - JWT validation via `RequirePlaybackToken` middleware
 
 ---
 
-## 10. Live Streaming Pipeline
+## 11. Live Streaming Pipeline
 
-### Broadcaster Setup (OBS)
+### Broadcaster setup
 
-1. Create a stream key at `http://localhost:8080/go-live` → copy the `sk_…` ID.
-2. In OBS: **Settings → Stream → Service: Custom → Server: `rtmp://localhost:1935/live`**
-3. Set Stream Key to the `sk_…` value.
-4. Start Streaming.
+1. `POST /api/v1/stream-keys` with `{"label":"OBS"}` → copy the `sk_…` value
+2. In OBS: **Settings → Stream → Service: Custom**
+   - Server: `rtmp://localhost:1935/live`
+   - Stream Key: `sk_…`
+3. Start Streaming
 
-### RTMP Ingest Path
+### RTMP ingest path
 
 ```
 OBS ──RTMP──▶ RTMPServer (internal/live/rtmp_server.go)
-                 └─ go-rtmp Server.Serve(net.Listener)
-                      └─ per connection: rtmpHandler
-                           OnPublish() → Manager.StartStream(streamKey)
-                             1. Validate stream key in DB
-                             2. Create live_streams record (status=live)
-                             3. newTranscodeSession() → spawn FFmpeg
-                             4. Write FLV file header to FFmpeg stdin
-                           OnVideo(timestamp, payload) → writeTag(0x09, …)
-                           OnAudio(timestamp, payload) → writeTag(0x08, …)
-                           OnClose() → Manager.EndStream()
+                 └─ go-rtmp → per connection: rtmpHandler
+                      OnPublish() → Manager.StartStream(streamKey)
+                        1. Validate stream key in DB
+                        2. Create live_streams record (status=live)
+                        3. newTranscodeSession() → spawn FFmpeg
+                        4. Write FLV file header to FFmpeg stdin
+                      OnVideo(ts, payload) → writeTag(0x09, …)
+                      OnAudio(ts, payload) → writeTag(0x08, …)
+                      OnClose() → Manager.EndStream()
 ```
 
-### FLV Framing
+### FLV framing
 
-RTMP message payloads are the raw FLV tag data bytes. `transcodeSession.writeTag()` wraps each payload with a proper FLV tag header (11 bytes) and appends the `PreviousTagSize` (4 bytes):
+RTMP message payloads are raw FLV tag data bytes. `transcodeSession.writeTag()` prepends the 11-byte FLV tag header (type + data size + timestamp + stream ID) and appends the 4-byte `PreviousTagSize`.
 
-```
-FLV file header (13 bytes):
-  "FLV" + version=0x01 + flags=0x05 + data_offset=9 + PreviousTagSize0=0
-
-Per tag (video=0x09, audio=0x08):
-  TagType  (1 byte)
-  DataSize (3 bytes, big-endian)
-  Timestamp lower 24 bits (3 bytes, big-endian)
-  TimestampExtended upper 8 bits (1 byte)
-  StreamID (3 bytes, always 0)
-  Data     (DataSize bytes) ← RTMP payload
-  PreviousTagSize (4 bytes, big-endian) = DataSize + 11
-```
-
-### Live FFmpeg Pipeline
+### Live FFmpeg pipeline
 
 ```
-FFmpeg stdin (FLV stream)
+FFmpeg stdin (FLV pipe)
   ↓
 -f flv -i pipe:0
   ↓
--filter_complex "[0:v]split=3[raw720][raw480][raw360];
-                  [raw720]scale=1280:720[v720];
-                  [raw480]scale=854:480[v480];
-                  [raw360]scale=640:360[v360]"
-  ↓
-3 video streams + 3 audio streams
+-filter_complex "[0:v]split=3[v720][v480][v360]; scale to 1280:720, 854:480, 640:360"
   ↓
 -f hls
-  -hls_time 2                   (2-second segments — lower latency than VOD)
-  -hls_list_size 5              (sliding window: keep only 5 segments)
+  -hls_time 2                  (2-second segments — lower latency)
+  -hls_list_size 5             (sliding window: 5 segments)
   -hls_flags delete_segments+independent_segments+append_list
-  -hls_segment_type mpegts      (MPEG-TS segments; simpler than fMP4 for live)
-  -var_stream_map "v:0,a:0,name:720p v:1,a:1,name:480p v:2,a:2,name:360p"
+  -hls_segment_type mpegts     (MPEG-TS for live, not fMP4)
   ↓
-data/live/{stream_id}/720p/playlist.m3u8  (+ segment_0000.ts … segment_0004.ts)
+data/live/{stream_id}/720p/playlist.m3u8 + *.ts
 data/live/{stream_id}/480p/playlist.m3u8
 data/live/{stream_id}/360p/playlist.m3u8
-data/live/{stream_id}/master.m3u8   ← written upfront (fixed content)
+data/live/{stream_id}/master.m3u8  ← written upfront
 ```
 
-**Live codec settings:**
+All live profiles use `libx264` with `-preset veryfast -tune zerolatency` (GOP=60) for ~2–4s end-to-end latency.
 
-| Stream | Video codec | Preset | Tune | GOP |
-|--------|-------------|--------|------|-----|
-| 720p | libx264 | veryfast | zerolatency | 60 |
-| 480p | libx264 | veryfast | zerolatency | 60 |
-| 360p | libx264 | veryfast | zerolatency | 60 |
-
-`-tune zerolatency` disables B-frames and delays to minimize end-to-end latency (~2–4 seconds from OBS to viewer).
-
-### Stream End & VOD Conversion
+### Stream end & VOD conversion
 
 When OBS disconnects or `POST /api/v1/live/{id}/end` is called:
 
-1. `Manager.EndStream(streamID)`:
-   - Closes FFmpeg stdin → FFmpeg flushes + exits
-   - Appends `#EXT-X-ENDLIST` to all variant playlists (makes VOD-seekable)
-   - Updates `live_streams.status = ended`, `ended_at = NOW()`
-2. `Manager.convertToVOD(streamID)` (goroutine):
-   - Creates a `videos` record with `status=ready`, `hls_path=live/{stream_id}`
-   - Calls `videoRepo.UpdateHLSPath()` → video immediately playable via `/videos/{video_id}`
-   - Stores `video_id` in `live_streams` record for linking
+1. `Manager.EndStream()`: close FFmpeg stdin → FFmpeg flushes → appends `#EXT-X-ENDLIST` → updates `live_streams.status = ended`
+2. `Manager.convertToVOD()` (goroutine): creates a `videos` record pointing at `live/{stream_id}`, immediately playable via `/api/v1/videos/{video_id}`
+
+`EndAllStreams()` is called on SIGTERM so all live streams terminate cleanly.
 
 ---
 
-## 11. QoE Aggregator
+## 12. Telemetry
 
-**File:** `internal/qoe/aggregator.go`
+The telemetry handler (`internal/server/telemetry.go`) validates the session, batch-inserts events to `playback_events`, and increments Prometheus counters.
 
-### Design
-
-The aggregator runs entirely in memory. No database reads happen during metrics calculation — the telemetry handler writes to both DB and the aggregator. This keeps the dashboard SSE latency well under 1 second.
+### Event batch insert
 
 ```
-┌─────────────────────────────────────────┐
-│  Aggregator                             │
-│                                         │
-│  recentEvents  []timedEvent             │  ← 5-min sliding window
-│  activeSessions map[session_id]time     │  ← last heartbeat
-│  sessionToVideo map[session_id]video_id │
-│  videoTitles   map[video_id]string      │  ← lazy-fetched from DB
-│                                         │
-│  Background goroutine:                  │
-│   every 1s  → recalculate() + broadcast │
-│   every 10s → pruneEvents()            │
-│   every 30s → pruneSessions()          │
-└─────────────────────────────────────────┘
+POST /api/v1/sessions/{session_id}/events
+  → validate session exists + status=active
+  → backfill missing timestamps with server time
+  → eventRepo.BatchInsert() → single INSERT with UNNEST arrays
+  → update Prometheus counters per event_type
 ```
 
-### Metric Calculations
+### Prometheus counters updated per event
 
-| Metric | Method |
+| Event | Metric |
 |---|---|
-| Active sessions | Sessions with heartbeat timestamp < 60s ago |
-| TTFF | `playback_start.download_time_ms` values → percentile(50) and percentile(95) |
-| Rebuffer rate | `len(sessions with rebuffer_start) / len(all sessions)` |
-| Avg rebuffer duration | Mean of `rebuffer_end.rebuffer_duration_ms` values |
-| Quality distribution | Count of each quality in heartbeats / total heartbeats |
-| Avg bitrate | Σ(quality_fraction × quality_bitrate_kbps) |
-| Quality switches/min | `count(quality_change events) / 5` |
-| Throughput | Mean and p10 of `segment_downloaded.throughput_bps` / 1_000_000 |
-
-### SSE Subscription Pattern
-
-```go
-// Dashboard handler subscribes on connect, unsubscribes on disconnect
-ch := aggregator.Subscribe()    // buffered chan (capacity 2)
-defer aggregator.Unsubscribe(ch)
-for metrics := range ch {
-    fmt.Fprintf(w, "data: %s\n\n", json.Marshal(metrics))
-}
-```
-
-If the subscriber is slow, the aggregator drops the update (non-blocking send).
-
-### Live Counter Integration
-
-The `live.Manager` implements the `qoe.LiveCounter` interface:
-```go
-type LiveCounter interface {
-    ActiveCount() int   // returns len(sessions)
-}
-```
-
-Wired in `cmd/server/main.go`:
-```go
-aggregator.SetLiveCounter(liveMgr)
-```
-
----
-
-## 12. Frontend Templates
-
-All templates are embedded at compile time via `internal/web/embed.go`. The `PageHandler` parses them at startup using `template.ParseFS(web.Templates, "templates/*.html")`.
-
-### TelemetryClient (in `player.html`)
-
-A JavaScript class that buffers playback events and flushes them every 3 seconds:
-
-```js
-class TelemetryClient {
-  constructor(sessionId, telemetryUrl) { … }
-
-  // Called by hls.js events:
-  recordPlaybackStart(bufferLength)
-  recordSegmentDownloaded(fragData)
-  recordQualityChange(fromLevel, toLevel)
-  recordRebufferStart()
-  recordRebufferEnd()
-
-  // Called by setInterval(5000):
-  recordHeartbeat(video, hls)
-
-  // Batches events, flushes every 3s to telemetry_url:
-  push(event)
-  flush()          // POST {events:[…]} to telemetryUrl
-}
-```
-
-### Library page auto-refresh
-
-The library polls `/api/v1/videos` every 3 seconds and `/api/v1/live` every 5 seconds. Cards are updated in-place (only re-rendered if status changed or currently processing), avoiding full-page refreshes.
-
-### Upload chunking logic (`upload.html`)
-
-```
-File selected
-  → POST /api/v1/uploads { filename, total_chunks }
-  → For chunk 0 .. n-1:
-       PUT /api/v1/uploads/{id}/chunks/{n}  (5 MB slice)
-  → Poll /api/v1/videos/{id}/status until status != "processing"
-  → Redirect to /watch/{id}
-```
-
-Upload progress is shown as two phases: upload (0–70%) and processing (70–100% mapped from job.progress).
+| any | `telemetry_events_received_total{event_type}` |
+| `playback_start` | `playback_ttff_seconds` (histogram) |
+| `rebuffer_start` | `playback_rebuffer_total` (counter) |
+| `rebuffer_end` | `playback_rebuffer_duration_seconds` (histogram) |
+| `quality_change` | `playback_quality_switches_total{direction}` (up/down) |
+| `playback_error` | `playback_errors_total{error_code}` |
 
 ---
 
 ## 13. Internal Packages
 
+### `internal/server`
+
+Implements `api.ServerInterface`. Each file handles one domain:
+- All handlers use `writeJSON(w, v, status)` / `writeError(w, msg, status)` from `errors.go`
+- Handlers check auth with `middleware.CurrentUser(ctx)` — return `401` if nil when auth is required
+- The `decodeJSON(r, dst)` helper limits body reads and returns a clear error on malformed JSON
+
 ### `internal/repository`
 
-One struct per table, all methods take `context.Context` (except a few sync ones). All SQL uses `$N` positional parameters (PostgreSQL style).
-
-Nullable string/int helpers are defined in `event_repo.go` and used across the package:
-```go
-func ns(s string) interface{}  { if s == "" { return nil }; return s }
-func ni(n *int) interface{}    { if n == nil { return nil }; return *n }
-func ni64(n *int64) interface{} { … }
-func nf64(n *float64) interface{} { … }
-```
+One struct per table, SQL uses `$N` positional parameters (PostgreSQL). Most methods accept `context.Context`. Nullable column helpers (`ns`, `ni`, `ni64`, `nf64`) are defined in `event_repo.go` and shared across the package.
 
 ### `internal/service`
 
-Pure business logic. No HTTP types, no `sql.DB`. Receives repos/dependencies via constructor injection.
+Pure business logic — no HTTP types, no `*sql.DB`. Services receive repos via constructor injection.
+
+- `ChatHub`: in-memory fan-out for live chat. Manages per-stream subscriber channels, persists messages via `ChatMessageRepo`.
+- `SessionService`: issues and validates playback JWTs, creates/updates `playback_sessions`.
+- `UserSessionService`: issues and validates the browser session cookie JWT (separate from playback JWTs).
+- `OAuthService`: wraps `golang.org/x/oauth2` for the Google flow.
 
 ### `internal/live`
 
-The `Manager` is the single owner of all active `transcodeSession` objects. The `rtmpHandler` (one per TCP connection) holds a reference to `Manager` and calls `StartStream` / `WriteVideo` / `WriteAudio` / `EndStream`. No direct repo access from `rtmpHandler`.
+`Manager` is the sole owner of all active `transcodeSession` objects. `RTMPHandler` (one per TCP connection) holds a `Manager` reference — no direct DB access from the handler.
 
-### `internal/transcoder`
+### `internal/watchdog`
 
-Pure FFmpeg/FFprobe wrappers. Used only by `TranscodeService`. Can also be used directly by the `cmd/transcode` CLI.
+Runs on a 30-second tick. Detects FFmpeg processes that have stopped writing segments (stalled live streams) and resets `transcode_jobs` stuck in `running` status back to `queued` so the worker can retry.
 
 ---
 
@@ -916,93 +932,85 @@ Pure FFmpeg/FFprobe wrappers. Used only by `TranscodeService`. Can also be used 
 ### VOD Upload → Playback
 
 ```
-Browser                 UploadService           DB              Worker
-   │                        │                    │                │
-   │─ POST /api/v1/uploads ─▶│ create video+chunks│                │
-   │◀─ {upload_id} ─────────│                    │                │
-   │                        │                    │                │
-   │─ PUT …/chunks/0 ───────▶│ save to disk       │                │
-   │─ PUT …/chunks/1 ───────▶│ mark received      │                │
-   │─ PUT …/chunks/N ───────▶│ last chunk!        │                │
-   │                        │─ assemble() ───────▶│ create job     │
-   │                        │                    │──── jobCh ────▶│
-   │                        │                    │                │ Process()
-   │                        │                    │◀─ update prog─ │
-   │─ GET /api/v1/videos/{id}/status ──────────────▶│              │
-   │◀─ {status:"processing",progress:0.35} ─────────│              │
-   │                        │                    │◀─ status=ready─│
-   │─ GET /watch/{id}       │                    │                │
-   │─ POST …/sessions ──────────────────────────▶│ create session │
-   │◀─ {manifest_url,token} ────────────────────│                │
-   │─ GET /videos/{id}/master.m3u8?token=… ─────── auth check ──▶│
-   │◀─ HLS manifest ──────────────────────────────────────────────│
+Client              UploadService         DB              Worker
+  │                      │                 │                 │
+  │─ POST /uploads ──────▶│ create records  │                 │
+  │◀─ {upload_id} ────────│                 │                 │
+  │─ PUT …/chunks/0 ──────▶│ save to disk    │                 │
+  │─ PUT …/chunks/N ──────▶│ last chunk!     │                 │
+  │                       │─ assemble ──────▶│ create job      │
+  │                       │                 │──── jobCh ─────▶│
+  │                       │                 │                 │ Process()
+  │                       │                 │◀── update prog──│
+  │─ GET /videos/{id}/status ───────────────▶│                 │
+  │◀─ {progress:0.35} ──────────────────────│                 │
+  │                       │                 │◀── status=ready─│
+  │─ POST /videos/{id}/sessions ────────────▶│ create session  │
+  │◀─ {manifest_url,token} ─────────────────│                 │
+  │─ GET /videos/{id}/master.m3u8?token=… ───── auth check ──▶│
+  │◀─ HLS manifest ──────────────────────────────────────────  │
 ```
 
 ### Live Broadcast → Viewer
 
 ```
-OBS              RTMPHandler          Manager              FFmpeg (child proc)
- │                    │                  │                       │
- │─ RTMP connect ────▶│                  │                       │
- │─ RTMP publish ────▶│ OnPublish()      │                       │
- │  key=sk_…          │─ StartStream() ─▶│ newTranscodeSession() │
- │                    │                  │─ exec ffmpeg ────────▶│
- │                    │                  │─ write FLV header ────▶│
- │─ video packet ────▶│ OnVideo()        │                       │
- │                    │─ WriteVideo() ───▶│─ writeTag(0x09) ─────▶│
- │─ audio packet ────▶│ OnAudio()        │                       │
- │                    │─ WriteAudio() ───▶│─ writeTag(0x08) ─────▶│
- │                    │                  │                  produces HLS
- │                    │                  │               data/live/{id}/
- │─ RTMP disconnect ─▶│ OnClose()        │                       │
- │                    │─ EndStream() ────▶│ close stdin ─────────▶│
- │                    │                  │   ← ffmpeg exits       │
- │                    │                  │ append #EXT-X-ENDLIST  │
- │                    │                  │ create VOD video record │
+OBS              RTMPHandler          Manager              FFmpeg
+ │                    │                  │                    │
+ │─ RTMP publish ────▶│ OnPublish()       │                    │
+ │  key=sk_…          │─ StartStream() ──▶│ spawn FFmpeg ──────▶│
+ │                    │                  │─ write FLV header ──▶│
+ │─ video packet ────▶│ OnVideo()         │                    │
+ │                    │─ WriteVideo() ────▶│─ writeTag(0x09) ──▶│
+ │─ audio packet ────▶│ OnAudio()         │                    │
+ │                    │─ WriteAudio() ────▶│─ writeTag(0x08) ──▶│
+ │                    │                  │               produces HLS
+ │─ RTMP disconnect ─▶│ OnClose()         │                    │
+ │                    │─ EndStream() ─────▶│ close stdin ───────▶│
+ │                    │                  │   FFmpeg exits       │
+ │                    │                  │ #EXT-X-ENDLIST       │
+ │                    │                  │ create VOD record    │
 
-Viewer               AuthMiddleware       LiveHandler
- │                       │                   │
- │─ POST /api/v1/live/{id}/sessions ─────────▶│ create session + JWT
- │◀─ {manifest_url,token} ───────────────────│
- │─ GET /live/{id}/master.m3u8?token=… ──────── verify stid claim
- │◀─ HLS manifest (no-cache) ──────────────────────────────────────
- │─ GET /live/{id}/720p/playlist.m3u8?… ───────── (repeated ~every 2s)
+Viewer               AuthMiddleware       server.CreateLiveSession
+ │                       │                      │
+ │─ POST /live/{id}/sessions ────────────────────▶│ create session + JWT
+ │◀─ {manifest_url,token} ───────────────────────│
+ │─ GET /live/{id}/master.m3u8?token=… ──── verify stid claim
+ │◀─ HLS manifest (no-cache) ─────────────────────
 ```
 
 ---
 
 ## 15. Adding Features
 
-### Adding a new API endpoint
+### Adding a new API endpoint (OpenAPI workflow)
 
-1. Add SQL if needed to `internal/database/postgres.go` (append to `migrationSQL`)
-2. Add model struct/constants to `internal/models/models.go`
-3. Add repository method to the relevant `internal/repository/*.go`
-4. Add service method to `internal/service/*.go`
-5. Create handler method in `internal/handler/*.go`
-6. Register route in `cmd/server/main.go`
+1. Edit `definition/api.yaml` — add the path + schemas
+2. `make spec-validate` — catch YAML/spec errors
+3. `make spec-generate` — regenerate `internal/api/api.gen.go`
+4. Add SQL if needed: append to the relevant migration in `internal/database/migrations/`
+5. Add model fields if needed: `internal/models/models.go`
+6. Add repository method: `internal/repository/{domain}_repo.go`
+7. Add service method: `internal/service/{domain}_service.go`
+8. Implement the new `ServerInterface` method: `internal/server/{domain}.go`
+
+The compiler will report missing interface methods after step 3 — follow the errors.
 
 ### Adding a new video quality profile
 
-Edit `internal/transcoder/ladder.go`. Add a `Profile` struct to the `defaultLadder` slice. Also update:
-- `qualityBitrates` map in `internal/qoe/aggregator.go` for accurate bitrate weighting
+Edit `internal/transcoder/ladder.go`. Add a `Profile` to `defaultLadder`. Also update:
 - The live FFmpeg args in `internal/live/transcode_session.go`
 - The `liveMasterPlaylist` constant in the same file
-- The quality bars in `internal/web/templates/dashboard.html`
 
 ### Adding a new telemetry event type
 
-1. If it needs new fields, add columns to `playback_events` in the migration SQL.
-2. Add the field to `models.PlaybackEvent`.
-3. Update `event_repo.go`'s `BatchInsert` (increment `numCols`, add the new column).
-4. Add the recording call in the browser (`player.html`'s `TelemetryClient`).
-5. Handle it in `aggregator.go`'s `recalculate()` if it affects dashboard metrics.
+1. Add columns to `playback_events` in a new migration file
+2. Add the field to `models.PlaybackEvent`
+3. Update `event_repo.go`'s `BatchInsert` (increment `numCols`, add the new column)
+4. Handle in `internal/server/telemetry.go`'s Prometheus switch statement
 
-### Changing the JWT expiry behaviour
+### Changing JWT expiry
 
-`JWT_EXPIRY` is a Go duration string. The token is included in the HLS manifest URL (as a query parameter). If the token expires during a viewing session, segment requests will fail. For long videos, consider:
-- Setting `JWT_EXPIRY` to a long duration (e.g., `12h`)
-- Or implementing token refresh (not currently implemented)
+`JWT_EXPIRY` is a Go duration string (`30m`, `2h`, `12h`). Tokens are embedded in HLS manifest URLs — if a token expires mid-playback, segment requests will fail. For long videos, use a generous expiry. Token refresh is not implemented.
 
 ---
 
@@ -1012,13 +1020,13 @@ Edit `internal/transcoder/ladder.go`. Add a `Profile` struct to the `defaultLadd
 
 ```bash
 make build
-# Produces: bin/server, bin/transcode
+# Produces: bin/server
 ```
 
-### Docker Compose for PostgreSQL
+### Docker Compose (PostgreSQL only)
 
 ```yaml
-# docker-compose.yml (provided)
+# docker-compose.yml
 services:
   postgres:
     image: postgres:15
@@ -1030,52 +1038,48 @@ services:
     volumes: [pgdata:/var/lib/postgresql/data]
 ```
 
-The server port is **5433** (not 5432) to avoid conflicts with local Postgres installs.
+Port 5433 (not 5432) avoids conflicts with a local Postgres install.
 
-### Systemd service example
+### Systemd service
 
 ```ini
 [Unit]
-Description=PramTube Server
+Description=philos-video API server
 After=network.target postgresql.service
 
 [Service]
 User=www-data
 WorkingDirectory=/opt/philos-video
 ExecStart=/opt/philos-video/bin/server
-Environment=PORT=8080
-Environment=DATABASE_URL=postgres://…
-Environment=DATA_DIR=/var/lib/philos-video/data
-Environment=WORKER_COUNT=4
-Environment=JWT_SECRET=<generated>
-Environment=RTMP_PORT=1935
+EnvironmentFile=/opt/philos-video/.env
 Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-### Reverse proxy (nginx) example
+### Nginx reverse proxy
 
 ```nginx
 server {
-    listen 80;
-    server_name video.example.com;
+    listen 443 ssl;
+    server_name api.example.com;
 
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection keep-alive;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        # Disable buffering for SSE (dashboard stream)
+        # Required for live chat SSE
         proxy_buffering off;
         proxy_cache off;
+        # Required for large chunk uploads
+        client_max_body_size 256m;
     }
 }
 
-# RTMP is a TCP protocol; use stream {} block for proxying if needed
+# RTMP (TCP stream proxy)
 stream {
     server {
         listen 1935;
@@ -1084,69 +1088,64 @@ stream {
 }
 ```
 
+Set `CORS_ORIGINS=https://app.example.com` when the frontend is on a different origin.
+
 ---
 
 ## 17. Security Considerations
 
-| Area | Current State | Recommendation |
+| Area | Status | Notes |
 |---|---|---|
-| `JWT_SECRET` | Dev default in code | **Must set a strong secret in production** (32+ random chars) |
-| Stream keys | Stored as plaintext `sk_*` IDs | Consider hashing with HMAC before DB storage |
-| Stream key API | Publicly accessible | Add admin authentication (basic auth or session-based) |
-| Rate limiting | None | Add per-IP rate limits on upload init, session create, event ingest |
-| CORS | None configured | Add `Access-Control-Allow-Origin` if frontend moves to separate origin |
-| HLS token binding | Token includes resource ID | Prevents using a VOD token for a different video or live stream |
-| `last_active_at` | Debounced 30s | Reduces DB load; 30s window means stale sessions linger briefly |
-| Input sanitation | Filenames stored as-is | File extension validation already done; consider length limits |
-| SQL injection | Parameterized queries (`$N`) | Protected |
-| FFmpeg injection | Args built from DB values | User-controlled values (title) are not passed to FFmpeg args |
+| `JWT_SECRET` | Dev default blocked at startup | Set a 32+ char random secret in production |
+| Playback tokens | Bound to specific video/stream ID | Prevents token reuse across resources |
+| Session cookie | HttpOnly, signed HS256 | Set `SESSION_COOKIE_SECURE=true` in production (HTTPS) |
+| CORS | Configurable via `CORS_ORIGINS` | Defaults to `*` — restrict to frontend origin in production |
+| Stream keys | `GOLIVE_WHITELIST` controls access | Only whitelisted emails can create/manage stream keys |
+| Rate limiting | Per-IP, in-process | Applied on upload init, session create, comment/chat post |
+| SQL injection | Parameterized queries (`$N`) | Protected throughout |
+| FFmpeg injection | User data not in FFmpeg args | Filenames/titles are stored in DB, not passed to shell |
+| Upload quota | Per-user byte limit | `DEFAULT_UPLOAD_QUOTA_BYTES`, enforced before chunk assembly |
+| Body size limits | `http.MaxBytesReader` | Set per handler (chunks: 256 MiB, JSON bodies: 64 KiB) |
 
 ---
 
 ## 18. Known Limitations
 
-1. **Safari native HLS**: When HLS.js isn't supported, the player falls back to the `<video>` element's native HLS. The JWT token query parameter will work for the master playlist but **not** for sub-playlists fetched natively by Safari — HLS.js's `xhrSetup` cannot intercept native requests. This is noted in `player.html`.
+1. **Safari native HLS**: JWT `?token=` query params work for the master playlist but may not be forwarded for sub-playlists fetched natively by Safari. HLS.js handles this correctly via `xhrSetup`.
 
-2. **Live stream audio assumption**: The live FFmpeg pipeline assumes the RTMP stream contains at least one audio track. Video-only streams will cause FFmpeg to fail. If OBS is sending video-only, remove the `-map 0:a` lines in `transcode_session.go` and adjust `var_stream_map` accordingly.
+2. **Live stream audio assumption**: The live FFmpeg pipeline assumes the RTMP stream contains at least one audio track. Video-only streams will cause FFmpeg to fail.
 
-3. **No token refresh**: Playback tokens expire based on `JWT_EXPIRY`. For long videos or live streams, set a generous expiry. Token renewal is not implemented.
+3. **No token refresh**: Tokens expire per `JWT_EXPIRY`. For long videos or live streams, use a generous expiry (e.g., `12h`).
 
-4. **Single database migration**: All migrations run as one idempotent SQL block (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE … ADD COLUMN IF NOT EXISTS`). There is no migration versioning system. Schema changes require care to keep them idempotent.
+4. **In-memory live sessions**: Active transcode sessions are lost on server restart. `live_streams` records will be stuck in `status=live` — run `UPDATE live_streams SET status='ended' WHERE status='live'` after an unclean shutdown.
 
-5. **In-memory live sessions**: Active transcode sessions are stored in `live.Manager`'s `sessions` map. Server restart terminates all live streams. The `live_streams` records would be stuck in `status=live` — run `UPDATE live_streams SET status='ended' WHERE status='live'` after an unclean shutdown.
+5. **No CDN integration**: HLS files are served directly from the Go process. For production traffic, put a CDN (CloudFront, Fastly) in front of `/videos/` and `/live/`, or serve from object storage (S3, GCS).
 
-6. **No CDN integration**: HLS files are served directly from the Go process. For production traffic, point a CDN (CloudFront, Fastly) at the `/videos/` and `/live/` routes, or serve the `data/hls/` and `data/live/` directories from an object store (S3, GCS).
-
-7. **No user accounts**: The platform has no user authentication. All APIs are accessible to anyone on the network. The stream key system provides minimal broadcaster auth; viewer access is controlled only by JWT tokens.
-
-8. **Data directory must be local**: The transcode workers and live FFmpeg processes write to `DATA_DIR` on the local filesystem. Shared network storage (NFS, etc.) is possible but untested and may have performance issues.
+6. **Local filesystem only**: Transcode workers and live FFmpeg write to `DATA_DIR` on local disk. Network storage (NFS, etc.) may have issues with live segment creation timing.
 
 ---
 
 ## 19. Dependencies
 
-### Go modules
+### Go modules (direct)
 
 | Module | Version | Purpose |
 |---|---|---|
-| `github.com/golang-jwt/jwt/v5` | v5.3.1 | JWT token signing and validation |
+| `github.com/go-chi/chi/v5` | v5.2.5 | HTTP router |
+| `github.com/go-chi/cors` | v1.2.2 | CORS middleware |
+| `github.com/oapi-codegen/runtime` | v1.4.0 | oapi-codegen runtime (param extraction) |
+| `github.com/golang-jwt/jwt/v5` | v5.3.1 | JWT signing and validation |
 | `github.com/lib/pq` | v1.11.2 | PostgreSQL driver |
-| `github.com/yutopp/go-rtmp` | v0.0.7 | RTMP server implementation |
-| `github.com/yutopp/go-amf0` | v0.1.0 | AMF0 serialization (go-rtmp dependency) |
-| `github.com/hashicorp/go-multierror` | v1.1.0 | Multi-error aggregation (go-rtmp dependency) |
-| `github.com/mitchellh/mapstructure` | v1.4.1 | Struct mapping (go-rtmp dependency) |
-| `github.com/pkg/errors` | v0.9.1 | Error wrapping (go-rtmp dependency) |
-| `github.com/sirupsen/logrus` | v1.7.0 | Structured logging (go-rtmp dependency) |
-
-### Frontend (CDN)
-
-| Library | URL | Purpose |
-|---|---|---|
-| HLS.js | `cdn.jsdelivr.net/npm/hls.js@latest` | Adaptive HLS playback in browsers |
+| `github.com/caarlos0/env/v11` | v11.4.0 | Env var config parsing |
+| `github.com/google/uuid` | v1.6.0 | UUID generation |
+| `github.com/pressly/goose/v3` | v3.27.0 | Database migrations |
+| `github.com/prometheus/client_golang` | v1.23.2 | Prometheus metrics |
+| `github.com/yutopp/go-rtmp` | v0.0.7 | RTMP server |
+| `golang.org/x/oauth2` | v0.36.0 | Google OAuth 2.0 |
 
 ### System tools (must be in `$PATH`)
 
 | Tool | Version | Purpose |
 |---|---|---|
-| `ffmpeg` | 4.0+ recommended | Video encoding, segmentation, live transcoding |
-| `ffprobe` | same as ffmpeg | Video file inspection (resolution, codec, duration) |
+| `ffmpeg` | 4.0+ | Video encoding, segmentation, live transcoding |
+| `ffprobe` | 4.0+ | Video metadata extraction |
