@@ -1,0 +1,8 @@
+type: object
+required:
+  - video
+properties:
+  video:
+    $ref: './Video.yaml'
+  job:
+    $ref: './TranscodeJob.yaml'

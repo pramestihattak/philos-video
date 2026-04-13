@@ -1,0 +1,23 @@
+get:
+  operationId: GetLiveStream
+  summary: Get a live stream by ID
+  tags: [live]
+  parameters:
+    - name: stream_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Live stream details
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/LiveStream.yaml'
+    '404':
+      description: Stream not found
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

@@ -1,0 +1,23 @@
+post:
+  operationId: CreateVideoSession
+  summary: Create a playback session for a video
+  tags: [sessions]
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '201':
+      description: Session created
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/PlaybackSession.yaml'
+    '404':
+      description: Video not found
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

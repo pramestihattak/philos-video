@@ -1,0 +1,23 @@
+post:
+  operationId: CreateLiveSession
+  summary: Create a playback session for a live stream
+  tags: [live, sessions]
+  parameters:
+    - name: stream_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '201':
+      description: Session created
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/PlaybackSession.yaml'
+    '404':
+      description: Stream not found
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

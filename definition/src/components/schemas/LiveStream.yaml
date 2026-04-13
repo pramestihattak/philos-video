@@ -1,0 +1,44 @@
+type: object
+required:
+  - id
+  - user_id
+  - stream_key_id
+  - title
+  - status
+  - record_vod
+  - created_at
+properties:
+  id:
+    type: string
+  user_id:
+    type: string
+  stream_key_id:
+    type: string
+  title:
+    type: string
+  status:
+    type: string
+    enum: [waiting, live, ended]
+  record_vod:
+    type: boolean
+  source_width:
+    type: integer
+  source_height:
+    type: integer
+  source_codec:
+    type: string
+  source_fps:
+    type: string
+  hls_path:
+    type: string
+  video_id:
+    type: string
+  started_at:
+    type: string
+    format: date-time
+  ended_at:
+    type: string
+    format: date-time
+  created_at:
+    type: string
+    format: date-time

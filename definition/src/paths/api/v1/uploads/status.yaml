@@ -1,0 +1,25 @@
+get:
+  operationId: GetUploadStatus
+  summary: Get upload progress
+  tags: [uploads]
+  security:
+    - CookieAuth: []
+  parameters:
+    - name: upload_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Upload progress
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/UploadProgress.yaml'
+    '404':
+      description: Upload not found
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

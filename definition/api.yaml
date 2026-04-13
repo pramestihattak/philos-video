@@ -1,0 +1,1203 @@
+openapi: 3.0.3
+info:
+  title: PramTube API
+  description: Self-hosted video streaming platform API
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: philos_session
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+
+    User:
+      type: object
+      required: [id, email, upload_quota_bytes, used_bytes, created_at]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        picture:
+          type: string
+        upload_quota_bytes:
+          type: integer
+          format: int64
+        used_bytes:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+
+    Video:
+      type: object
+      required: [id, title, visibility, status, play_count, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        uploader_name:
+          type: string
+        uploader_picture:
+          type: string
+        title:
+          type: string
+        visibility:
+          type: string
+          enum: [private, unlisted, public]
+        status:
+          type: string
+          enum: [uploading, processing, ready, failed]
+        width:
+          type: integer
+        height:
+          type: integer
+        duration:
+          type: string
+        codec:
+          type: string
+        hls_path:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        thumbnail_path:
+          type: string
+        play_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TranscodeJob:
+      type: object
+      required: [id, video_id, status, progress, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        video_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        stage:
+          type: string
+        progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    VideoStatus:
+      x-go-name: VideoStatusResponse
+      type: object
+      required: [video]
+      properties:
+        video:
+          $ref: '#/components/schemas/Video'
+        job:
+          $ref: '#/components/schemas/TranscodeJob'
+
+    Comment:
+      type: object
+      required: [id, video_id, user_id, user_name, body, created_at]
+      properties:
+        id:
+          type: string
+        video_id:
+          type: string
+        user_id:
+          type: string
+        user_name:
+          type: string
+        user_picture:
+          type: string
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ChatMessage:
+      type: object
+      required: [id, stream_id, user_id, user_name, body, created_at]
+      properties:
+        id:
+          type: string
+        stream_id:
+          type: string
+        user_id:
+          type: string
+        user_name:
+          type: string
+        user_picture:
+          type: string
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    LiveStream:
+      type: object
+      required: [id, user_id, stream_key_id, title, status, record_vod, created_at]
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        stream_key_id:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+          enum: [waiting, live, ended]
+        record_vod:
+          type: boolean
+        source_width:
+          type: integer
+        source_height:
+          type: integer
+        source_codec:
+          type: string
+        source_fps:
+          type: string
+        hls_path:
+          type: string
+        video_id:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    StreamKey:
+      type: object
+      required: [id, user_label, is_active, record_vod, created_at]
+      properties:
+        id:
+          type: string
+        user_label:
+          type: string
+        is_active:
+          type: boolean
+        record_vod:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    PlaybackSession:
+      type: object
+      required: [session_id, manifest_url, token]
+      properties:
+        session_id:
+          type: string
+        manifest_url:
+          type: string
+        token:
+          type: string
+        telemetry_url:
+          type: string
+
+    PlaybackEvent:
+      type: object
+      required: [event_type]
+      properties:
+        event_type:
+          type: string
+          enum: [playback_start, playback_end, heartbeat, rebuffer_start, rebuffer_end, quality_change, segment_downloaded, playback_error]
+        timestamp:
+          type: string
+          format: date-time
+        segment_number:
+          type: integer
+        segment_quality:
+          type: string
+        segment_bytes:
+          type: integer
+          format: int64
+        download_time_ms:
+          type: integer
+        throughput_bps:
+          type: integer
+          format: int64
+        current_quality:
+          type: string
+        buffer_length:
+          type: number
+          format: float
+        playback_position:
+          type: number
+          format: float
+        rebuffer_duration_ms:
+          type: integer
+        quality_from:
+          type: string
+        quality_to:
+          type: string
+        error_code:
+          type: string
+        error_message:
+          type: string
+
+    UploadInitRequest:
+      type: object
+      required: [title, total_chunks, file_size]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        total_chunks:
+          type: integer
+          minimum: 1
+        file_size:
+          type: integer
+          format: int64
+          minimum: 1
+
+    UploadInitResponse:
+      type: object
+      required: [upload_id, total_chunks]
+      properties:
+        upload_id:
+          type: string
+        total_chunks:
+          type: integer
+
+    UploadProgress:
+      type: object
+      required: [received, total]
+      properties:
+        received:
+          type: integer
+        total:
+          type: integer
+
+paths:
+  /health:
+    get:
+      operationId: GetHealth
+      summary: Liveness probe
+      tags: [health]
+      responses:
+        '200':
+          description: Server is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  uptime_seconds:
+                    type: number
+
+  /health/ready:
+    get:
+      operationId: GetHealthReady
+      summary: Readiness probe
+      tags: [health]
+      responses:
+        '200':
+          description: Server is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  checks:
+                    type: object
+                    additionalProperties:
+                      type: string
+        '503':
+          description: Server not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/me:
+    get:
+      operationId: GetMe
+      summary: Get current authenticated user
+      tags: [auth]
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      operationId: Logout
+      summary: Log out current user
+      tags: [auth]
+      responses:
+        '204':
+          description: Logged out successfully
+
+  /api/v1/videos:
+    get:
+      operationId: ListVideos
+      summary: List videos
+      tags: [videos]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: List of videos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Video'
+
+  /api/v1/videos/{id}:
+    get:
+      operationId: GetVideo
+      summary: Get a video by ID
+      tags: [videos]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Video details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Video'
+        '404':
+          description: Video not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: DeleteVideo
+      summary: Delete a video
+      tags: [videos]
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Video deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: UpdateVideo
+      summary: Update video properties
+      tags: [videos]
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                visibility:
+                  type: string
+                  enum: [private, unlisted, public]
+      responses:
+        '204':
+          description: Video updated
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/videos/{id}/status:
+    get:
+      operationId: GetVideoStatus
+      summary: Get video transcode status
+      tags: [videos]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Video status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoStatus'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/videos/{id}/sessions:
+    post:
+      operationId: CreateVideoSession
+      summary: Create a playback session for a video
+      tags: [sessions]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybackSession'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/uploads:
+    post:
+      operationId: InitUpload
+      summary: Initialize a chunked video upload
+      tags: [uploads]
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadInitRequest'
+      responses:
+        '201':
+          description: Upload initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadInitResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/uploads/{upload_id}/thumbnail:
+    post:
+      operationId: UploadThumbnail
+      summary: Upload a thumbnail image
+      tags: [uploads]
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [thumbnail]
+              properties:
+                thumbnail:
+                  type: string
+                  format: binary
+      responses:
+        '204':
+          description: Thumbnail uploaded
+        '400':
+          description: Invalid image
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/uploads/{upload_id}/chunks/{chunk_number}:
+    put:
+      operationId: ReceiveChunk
+      summary: Upload a single chunk
+      tags: [uploads]
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: chunk_number
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '204':
+          description: Chunk received
+        '400':
+          description: Invalid chunk
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/uploads/{upload_id}/status:
+    get:
+      operationId: GetUploadStatus
+      summary: Get upload progress
+      tags: [uploads]
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: upload_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Upload progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadProgress'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/videos/{video_id}/comments:
+    get:
+      operationId: ListComments
+      summary: List comments for a video
+      tags: [comments]
+      parameters:
+        - name: video_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: List of comments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Comment'
+    post:
+      operationId: AddComment
+      summary: Add a comment to a video
+      tags: [comments]
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: video_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+      responses:
+        '201':
+          description: Comment added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/videos/{video_id}/comments/{comment_id}:
+    delete:
+      operationId: DeleteComment
+      summary: Delete a comment
+      tags: [comments]
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: video_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: comment_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Comment deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/live:
+    get:
+      operationId: ListLiveStreams
+      summary: List active live streams
+      tags: [live]
+      responses:
+        '200':
+          description: List of live streams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LiveStream'
+
+  /api/v1/live/{stream_id}:
+    get:
+      operationId: GetLiveStream
+      summary: Get a live stream by ID
+      tags: [live]
+      parameters:
+        - name: stream_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Live stream details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveStream'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/live/{stream_id}/viewers:
+    get:
+      operationId: GetLiveViewers
+      summary: Get viewer count for a live stream
+      tags: [live]
+      parameters:
+        - name: stream_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Viewer count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count]
+                properties:
+                  count:
+                    type: integer
+
+  /api/v1/live/{stream_id}/sessions:
+    post:
+      operationId: CreateLiveSession
+      summary: Create a playback session for a live stream
+      tags: [live, sessions]
+      parameters:
+        - name: stream_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybackSession'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/live/{stream_id}/end:
+    post:
+      operationId: EndLiveStream
+      summary: End a live stream
+      tags: [live]
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: stream_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Stream ended
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/live/{stream_id}/chat:
+    get:
+      operationId: ListChatMessages
+      summary: List chat messages for a live stream
+      tags: [chat]
+      parameters:
+        - name: stream_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: List of chat messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatMessage'
+    post:
+      operationId: SendChatMessage
+      summary: Send a chat message
+      tags: [chat]
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: stream_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessage'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/live/{stream_id}/chat/stream:
+    get:
+      operationId: ChatStream
+      summary: SSE stream of live chat messages
+      tags: [chat]
+      parameters:
+        - name: stream_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Server-sent event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/v1/stream-keys:
+    get:
+      operationId: ListStreamKeys
+      summary: List stream keys for the current user
+      tags: [stream-keys]
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: List of stream keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StreamKey'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: CreateStreamKey
+      summary: Create a new stream key
+      tags: [stream-keys]
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                record_vod:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Stream key created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamKey'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/stream-keys/{id}:
+    delete:
+      operationId: DeactivateStreamKey
+      summary: Deactivate a stream key
+      tags: [stream-keys]
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deactivated
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: UpdateStreamKey
+      summary: Update a stream key
+      tags: [stream-keys]
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                record_vod:
+                  type: boolean
+      responses:
+        '204':
+          description: Updated
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/sessions/{session_id}/events:
+    post:
+      operationId: PostTelemetryEvents
+      summary: Submit batch playback telemetry events
+      tags: [telemetry]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    $ref: '#/components/schemas/PlaybackEvent'
+      responses:
+        '200':
+          description: Events accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [received]
+                properties:
+                  received:
+                    type: integer
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '410':
+          description: Session ended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

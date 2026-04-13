@@ -1,0 +1,19 @@
+get:
+  operationId: GetMe
+  summary: Get current authenticated user
+  tags: [auth]
+  security:
+    - CookieAuth: []
+  responses:
+    '200':
+      description: Current user
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/User.yaml'
+    '401':
+      description: Not authenticated
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

@@ -1,0 +1,32 @@
+delete:
+  operationId: DeleteComment
+  summary: Delete a comment
+  tags: [comments]
+  security:
+    - CookieAuth: []
+  parameters:
+    - name: video_id
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: comment_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '204':
+      description: Comment deleted
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'
+    '404':
+      description: Comment not found
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

@@ -1,0 +1,16 @@
+get:
+  operationId: GetHealth
+  summary: Liveness probe
+  tags: [health]
+  responses:
+    '200':
+      description: Server is alive
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              uptime_seconds:
+                type: number

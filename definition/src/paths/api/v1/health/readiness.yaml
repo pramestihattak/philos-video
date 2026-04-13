@@ -1,0 +1,24 @@
+get:
+  operationId: GetHealthReady
+  summary: Readiness probe
+  tags: [health]
+  responses:
+    '200':
+      description: Server is ready
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+              checks:
+                type: object
+                additionalProperties:
+                  type: string
+    '503':
+      description: Server not ready
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

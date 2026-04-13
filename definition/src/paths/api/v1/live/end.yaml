@@ -1,0 +1,27 @@
+post:
+  operationId: EndLiveStream
+  summary: End a live stream
+  tags: [live]
+  security:
+    - CookieAuth: []
+  parameters:
+    - name: stream_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '204':
+      description: Stream ended
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'
+    '404':
+      description: Stream not found
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

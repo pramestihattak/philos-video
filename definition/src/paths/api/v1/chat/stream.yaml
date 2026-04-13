@@ -1,0 +1,17 @@
+get:
+  operationId: ChatStream
+  summary: SSE stream of live chat messages
+  tags: [chat]
+  parameters:
+    - name: stream_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Server-sent event stream of chat messages
+      content:
+        text/event-stream:
+          schema:
+            type: string

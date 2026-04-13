@@ -1,0 +1,7 @@
+post:
+  operationId: Logout
+  summary: Log out current user
+  tags: [auth]
+  responses:
+    '204':
+      description: Logged out successfully

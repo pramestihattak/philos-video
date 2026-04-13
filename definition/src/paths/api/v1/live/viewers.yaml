@@ -1,0 +1,22 @@
+get:
+  operationId: GetLiveViewers
+  summary: Get active viewer count for a live stream
+  tags: [live]
+  parameters:
+    - name: stream_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Viewer count
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - count
+            properties:
+              count:
+                type: integer

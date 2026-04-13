@@ -1,0 +1,13 @@
+get:
+  operationId: ListLiveStreams
+  summary: List active live streams
+  tags: [live]
+  responses:
+    '200':
+      description: List of live streams
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: '../../../components/schemas/LiveStream.yaml'

@@ -1,0 +1,54 @@
+post:
+  operationId: PostTelemetryEvents
+  summary: Submit batch playback telemetry events
+  tags: [telemetry]
+  parameters:
+    - name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - events
+          properties:
+            events:
+              type: array
+              maxItems: 1000
+              items:
+                $ref: '../../../components/schemas/PlaybackEvent.yaml'
+  responses:
+    '200':
+      description: Events accepted
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - received
+            properties:
+              received:
+                type: integer
+    '400':
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'
+    '404':
+      description: Session not found
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'
+    '410':
+      description: Session ended
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

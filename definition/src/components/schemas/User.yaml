@@ -1,0 +1,27 @@
+type: object
+required:
+  - id
+  - email
+  - upload_quota_bytes
+  - used_bytes
+  - created_at
+properties:
+  id:
+    type: string
+  email:
+    type: string
+    format: email
+  name:
+    type: string
+  picture:
+    type: string
+    format: uri
+  upload_quota_bytes:
+    type: integer
+    format: int64
+  used_bytes:
+    type: integer
+    format: int64
+  created_at:
+    type: string
+    format: date-time

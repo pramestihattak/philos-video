@@ -1,0 +1,39 @@
+post:
+  operationId: UploadThumbnail
+  summary: Upload a thumbnail image for a video
+  tags: [uploads]
+  security:
+    - CookieAuth: []
+  parameters:
+    - name: upload_id
+      in: path
+      required: true
+      schema:
+        type: string
+  requestBody:
+    required: true
+    content:
+      multipart/form-data:
+        schema:
+          type: object
+          required:
+            - thumbnail
+          properties:
+            thumbnail:
+              type: string
+              format: binary
+  responses:
+    '204':
+      description: Thumbnail uploaded
+    '400':
+      description: Invalid image
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

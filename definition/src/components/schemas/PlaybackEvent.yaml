@@ -1,0 +1,40 @@
+type: object
+required:
+  - event_type
+properties:
+  event_type:
+    type: string
+    enum: [playback_start, playback_end, heartbeat, rebuffer_start, rebuffer_end, quality_change, segment_downloaded, playback_error]
+  timestamp:
+    type: string
+    format: date-time
+  segment_number:
+    type: integer
+  segment_quality:
+    type: string
+  segment_bytes:
+    type: integer
+    format: int64
+  download_time_ms:
+    type: integer
+  throughput_bps:
+    type: integer
+    format: int64
+  current_quality:
+    type: string
+  buffer_length:
+    type: number
+    format: float
+  playback_position:
+    type: number
+    format: float
+  rebuffer_duration_ms:
+    type: integer
+  quality_from:
+    type: string
+  quality_to:
+    type: string
+  error_code:
+    type: string
+  error_message:
+    type: string

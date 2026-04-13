@@ -1,0 +1,44 @@
+post:
+  operationId: SendChatMessage
+  summary: Send a chat message to a live stream
+  tags: [chat]
+  security:
+    - CookieAuth: []
+  parameters:
+    - name: stream_id
+      in: path
+      required: true
+      schema:
+        type: string
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - body
+          properties:
+            body:
+              type: string
+              minLength: 1
+              maxLength: 500
+  responses:
+    '201':
+      description: Message sent
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/ChatMessage.yaml'
+    '400':
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

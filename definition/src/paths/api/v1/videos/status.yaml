@@ -1,0 +1,23 @@
+get:
+  operationId: GetVideoStatus
+  summary: Get video transcode status
+  tags: [videos]
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Video status with optional transcode job
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/VideoStatus.yaml'
+    '404':
+      description: Video not found
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

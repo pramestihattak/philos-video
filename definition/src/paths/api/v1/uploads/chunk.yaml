@@ -1,0 +1,40 @@
+put:
+  operationId: ReceiveChunk
+  summary: Upload a single chunk
+  tags: [uploads]
+  security:
+    - CookieAuth: []
+  parameters:
+    - name: upload_id
+      in: path
+      required: true
+      schema:
+        type: string
+    - name: chunk_number
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 0
+  requestBody:
+    required: true
+    content:
+      application/octet-stream:
+        schema:
+          type: string
+          format: binary
+  responses:
+    '204':
+      description: Chunk received
+    '400':
+      description: Invalid chunk
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../components/schemas/Error.yaml'

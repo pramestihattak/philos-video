@@ -1,0 +1,16 @@
+get:
+  operationId: ListVideos
+  summary: List videos
+  tags: [videos]
+  parameters:
+    - $ref: '../../../components/parameters/PageParam.yaml'
+    - $ref: '../../../components/parameters/LimitParam.yaml'
+  responses:
+    '200':
+      description: List of videos
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: '../../../components/schemas/Video.yaml'

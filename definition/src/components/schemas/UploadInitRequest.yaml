@@ -1,0 +1,17 @@
+type: object
+required:
+  - title
+  - total_chunks
+  - file_size
+properties:
+  title:
+    type: string
+    minLength: 1
+    maxLength: 255
+  total_chunks:
+    type: integer
+    minimum: 1
+  file_size:
+    type: integer
+    format: int64
+    minimum: 1
