@@ -38,8 +38,9 @@ type Server struct {
 	userAuthMW *middleware.UserAuthMiddleware
 
 	// config values
-	dataDir      string
-	defaultQuota int64
+	dataDir         string
+	defaultQuota    int64
+	goLiveWhitelist []string
 }
 
 // Params holds constructor arguments for Server.
@@ -64,8 +65,9 @@ type Params struct {
 	HealthChecker *health.HealthChecker
 	UserAuthMW    *middleware.UserAuthMiddleware
 
-	DataDir      string
-	DefaultQuota int64
+	DataDir         string
+	DefaultQuota    int64
+	GoLiveWhitelist []string
 }
 
 // New creates a Server.
@@ -89,7 +91,8 @@ func New(p Params) *Server {
 		healthChecker: p.HealthChecker,
 		userAuthMW:    p.UserAuthMW,
 
-		dataDir:      p.DataDir,
-		defaultQuota: p.DefaultQuota,
+		dataDir:         p.DataDir,
+		defaultQuota:    p.DefaultQuota,
+		goLiveWhitelist: p.GoLiveWhitelist,
 	}
 }

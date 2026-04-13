@@ -8,11 +8,19 @@ import (
 	"philos-video/internal/models"
 )
 
+func (s *Server) canGoLive(user *models.User) bool {
+	return middleware.CanGoLive(s.goLiveWhitelist, user.Email)
+}
+
 // ListStreamKeys handles GET /api/v1/stream-keys.
 func (s *Server) ListStreamKeys(w http.ResponseWriter, r *http.Request) {
 	user := middleware.CurrentUser(r.Context())
 	if user == nil {
 		writeError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !s.canGoLive(user) {
+		writeError(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -33,6 +41,10 @@ func (s *Server) CreateStreamKey(w http.ResponseWriter, r *http.Request) {
 	user := middleware.CurrentUser(r.Context())
 	if user == nil {
 		writeError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !s.canGoLive(user) {
+		writeError(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -66,6 +78,10 @@ func (s *Server) DeactivateStreamKey(w http.ResponseWriter, r *http.Request, id 
 		writeError(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if !s.canGoLive(user) {
+		writeError(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	if err := s.streamKeyRepo.Deactivate(id, user.ID); err != nil {
 		slog.Error("deactivate stream key", "id", id, "err", err)
 		writeError(w, "internal error", http.StatusInternalServerError)
@@ -79,6 +95,10 @@ func (s *Server) UpdateStreamKey(w http.ResponseWriter, r *http.Request, id stri
 	user := middleware.CurrentUser(r.Context())
 	if user == nil {
 		writeError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !s.canGoLive(user) {
+		writeError(w, "forbidden", http.StatusForbidden)
 		return
 	}
 

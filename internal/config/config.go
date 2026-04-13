@@ -37,6 +37,10 @@ type Config struct {
 	// Comma-separated list of email addresses allowed to use Go Live.
 	// Empty means no one can go live. Example: alice@example.com,bob@example.com
 	GoLiveWhitelist []string `env:"GOLIVE_WHITELIST" envSeparator:","`
+
+	// Comma-separated list of allowed CORS origins for the API.
+	// Example: https://app.example.com,http://localhost:3000
+	CORSOrigins []string `env:"CORS_ORIGINS" envSeparator:","`
 }
 
 func Load() (*Config, error) {

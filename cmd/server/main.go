@@ -13,17 +13,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"philos-video/internal/api"
 	"philos-video/internal/config"
 	"philos-video/internal/database"
-	"philos-video/internal/handler"
 	"philos-video/internal/health"
 	"philos-video/internal/live"
 	"philos-video/internal/logging"
 	"philos-video/internal/metrics"
 	"philos-video/internal/middleware"
 	"philos-video/internal/repository"
+	"philos-video/internal/server"
 	"philos-video/internal/service"
 	"philos-video/internal/watchdog"
 	"philos-video/internal/worker"
@@ -116,9 +119,6 @@ func main() {
 		os.Exit(1)
 	}
 	userAuthMW := middleware.NewUserAuthMiddleware(userSessionSvc, userRepo)
-	requireUser := userAuthMW.RequireUser
-	requireUserAPI := userAuthMW.RequireUserAPI
-	optionalUser := userAuthMW.OptionalUser
 
 	// OAuth service
 	oauthSvc := service.NewOAuthService(cfg)
@@ -138,101 +138,78 @@ func main() {
 	// Watchdog
 	wd := watchdog.New(liveMgr, jobRepo, cfg.DataDir)
 
-	// Rate limiters
-	uploadLimiter  := middleware.NewIPRateLimiter(60, time.Minute) // 60 uploads/min per IP
-	authLimiter    := middleware.NewIPRateLimiter(20, time.Minute) // 20 auth attempts/min per IP
-	commentLimiter := middleware.NewIPRateLimiter(30, time.Minute) // 30 comment/chat posts/min per IP
+	// API server
+	srv := server.New(server.Params{
+		VideoSvc:       videoSvc,
+		UploadSvc:      uploadSvc,
+		SessionSvc:     sessionSvc,
+		CommentSvc:     commentSvc,
+		ChatHub:        chatHub,
+		OAuthSvc:       oauthSvc,
+		UserSessionSvc: userSessionSvc,
 
-	// Handlers
-	authH := handler.NewAuthHandler(oauthSvc, userSessionSvc, userRepo, cfg.DefaultUploadQuotaBytes)
-	uploadH := handler.NewUploadHandler(uploadSvc, cfg.DataDir, videoRepo)
-	videoH := handler.NewVideoHandler(videoSvc)
-	sessionH := handler.NewSessionHandler(sessionSvc)
-	telemetryH := handler.NewTelemetryHandler(sessionRepo, eventRepo)
-	streamKeyH := handler.NewStreamKeyHandler(streamKeyRepo)
-	liveH := handler.NewLiveHandler(liveMgr, sessionSvc, sessionRepo)
-	healthH := handler.NewHealthHandler(healthChecker)
-	commentH := handler.NewCommentHandler(commentSvc)
-	chatH := handler.NewChatHandler(chatHub)
-	goLiveGate := middleware.GoLiveGate(cfg.GoLiveWhitelist)
+		StreamKeyRepo: streamKeyRepo,
+		SessionRepo:   sessionRepo,
+		EventRepo:     eventRepo,
+		UserRepo:      userRepo,
+		VideoRepo:     videoRepo,
 
-	mux := http.NewServeMux()
+		LiveMgr:       liveMgr,
+		HealthChecker: healthChecker,
+		UserAuthMW:    userAuthMW,
 
-	// Health checks
-	mux.HandleFunc("GET /health", healthH.Liveness)
-	mux.HandleFunc("GET /health/ready", healthH.Readiness)
+		DataDir:         cfg.DataDir,
+		DefaultQuota:    cfg.DefaultUploadQuotaBytes,
+		GoLiveWhitelist: cfg.GoLiveWhitelist,
+	})
+
+	// Chi router
+	r := chi.NewRouter()
+
+	// Global middleware
+	corsOrigins := cfg.CORSOrigins
+	if len(corsOrigins) == 0 {
+		corsOrigins = []string{"*"}
+	}
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   corsOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
+	r.Use(middleware.RequestIDMiddleware)
+	r.Use(middleware.MetricsMiddleware)
+	r.Use(securityHeadersMiddleware)
+	r.Use(userAuthMW.OptionalUser) // populates user context from session cookie for all routes
+
+	// Mount all OpenAPI-spec routes (30 endpoints)
+	api.HandlerFromMux(srv, r)
+
+	// OAuth redirect endpoints (not in OpenAPI spec — use HTTP redirects, not JSON)
+	r.Get("/auth/google/login", srv.GoogleLoginHandler)
+	r.Get("/auth/google/callback", srv.GoogleCallbackHandler)
 
 	// Prometheus metrics — gated behind login to avoid exposing internals
-	mux.Handle("GET /metrics", requireUser(promhttp.Handler()))
-
-	// OAuth + session
-	mux.HandleFunc("GET /auth/google/login", authH.GoogleLogin)
-	mux.HandleFunc("GET /auth/google/callback", authH.GoogleCallback)
-	mux.HandleFunc("POST /auth/logout", authH.Logout)
-	mux.Handle("GET /api/v1/me", optionalUser(http.HandlerFunc(authH.Me)))
-
-	// Upload API — requires login + rate-limited
-	mux.Handle("POST /api/v1/uploads", uploadLimiter(requireUserAPI(http.HandlerFunc(uploadH.InitUpload))))
-	mux.Handle("POST /api/v1/uploads/{upload_id}/thumbnail", requireUserAPI(http.HandlerFunc(uploadH.UploadThumbnail)))
-	mux.Handle("PUT /api/v1/uploads/{upload_id}/chunks/{chunk_number}", requireUserAPI(http.HandlerFunc(uploadH.ReceiveChunk)))
-	mux.Handle("GET /api/v1/uploads/{upload_id}/status", requireUserAPI(http.HandlerFunc(uploadH.GetStatus)))
-
-	// Video API
-	mux.Handle("GET /api/v1/videos", optionalUser(http.HandlerFunc(videoH.ListVideos)))
-	mux.Handle("GET /api/v1/videos/{id}", optionalUser(http.HandlerFunc(videoH.GetVideo)))
-	mux.Handle("GET /api/v1/videos/{id}/status", optionalUser(http.HandlerFunc(videoH.GetVideoStatus)))
-	mux.Handle("DELETE /api/v1/videos/{id}", requireUserAPI(http.HandlerFunc(videoH.DeleteVideo)))
-	mux.Handle("PATCH /api/v1/videos/{id}", requireUserAPI(http.HandlerFunc(videoH.UpdateVideo)))
-
-	// VOD session creation — rate-limited (public for non-private videos)
-	mux.Handle("POST /api/v1/videos/{id}/sessions", authLimiter(optionalUser(http.HandlerFunc(sessionH.CreateSession))))
-
-	// Comments
-	mux.Handle("POST /api/v1/videos/{video_id}/comments", commentLimiter(requireUserAPI(http.HandlerFunc(commentH.AddComment))))
-	mux.Handle("GET /api/v1/videos/{video_id}/comments", optionalUser(http.HandlerFunc(commentH.ListComments)))
-	mux.Handle("DELETE /api/v1/videos/{video_id}/comments/{comment_id}", requireUserAPI(http.HandlerFunc(commentH.DeleteComment)))
-
-	// Telemetry (session-validated inside handler)
-	mux.HandleFunc("POST /api/v1/sessions/{session_id}/events", telemetryH.PostEvents)
-
-	// Stream key management — requires login + Go Live whitelist
-	mux.Handle("POST /api/v1/stream-keys", requireUserAPI(goLiveGate(http.HandlerFunc(streamKeyH.Create))))
-	mux.Handle("GET /api/v1/stream-keys", requireUserAPI(goLiveGate(http.HandlerFunc(streamKeyH.List))))
-	mux.Handle("DELETE /api/v1/stream-keys/{id}", requireUserAPI(goLiveGate(http.HandlerFunc(streamKeyH.Deactivate))))
-	mux.Handle("PATCH /api/v1/stream-keys/{id}", requireUserAPI(goLiveGate(http.HandlerFunc(streamKeyH.Update))))
-
-	// Live stream API
-	mux.HandleFunc("GET /api/v1/live", liveH.ListLive)
-	mux.HandleFunc("GET /api/v1/live/{stream_id}", liveH.GetStream)
-	mux.HandleFunc("GET /api/v1/live/{stream_id}/viewers", liveH.Viewers)
-	mux.Handle("POST /api/v1/live/{stream_id}/sessions", authLimiter(http.HandlerFunc(liveH.CreateSession)))
-	mux.Handle("POST /api/v1/live/{stream_id}/end", requireUserAPI(http.HandlerFunc(liveH.EndStream)))
-
-	// Live chat
-	mux.Handle("POST /api/v1/live/{stream_id}/chat", commentLimiter(requireUserAPI(http.HandlerFunc(chatH.SendMessage))))
-	mux.HandleFunc("GET /api/v1/live/{stream_id}/chat/stream", chatH.ChatStream)
-	mux.HandleFunc("GET /api/v1/live/{stream_id}/chat", chatH.ListMessages)
+	r.Handle("/metrics", userAuthMW.RequireUser(promhttp.Handler()))
 
 	// Thumbnails — public, no auth required (preview images)
 	thumbDir := filepath.Join(cfg.DataDir, "thumbnails")
-	mux.Handle("GET /thumbnails/", http.StripPrefix("/thumbnails/", http.FileServer(http.Dir(thumbDir))))
+	r.Handle("/thumbnails/*", http.StripPrefix("/thumbnails", http.FileServer(http.Dir(thumbDir))))
 
 	// VOD HLS file serving — protected by JWT middleware
 	hlsDir := filepath.Join(cfg.DataDir, "hls")
-	hlsHandler := http.StripPrefix("/videos/", mimeHandler(http.FileServer(http.Dir(hlsDir))))
-	mux.Handle("GET /videos/", authMiddleware.RequirePlaybackToken(hlsHandler))
+	hlsHandler := http.StripPrefix("/videos", mimeHandler(http.FileServer(http.Dir(hlsDir))))
+	r.Handle("/videos/*", authMiddleware.RequirePlaybackToken(hlsHandler))
 
 	// Live HLS file serving — protected by JWT middleware, no-cache
 	liveDir := filepath.Join(cfg.DataDir, "live")
-	liveHLSHandler := http.StripPrefix("/live/", noCacheHandler(mimeHandler(http.FileServer(http.Dir(liveDir)))))
-	mux.Handle("GET /live/", authMiddleware.RequireLiveToken(liveHLSHandler))
+	liveHLSHandler := http.StripPrefix("/live", noCacheHandler(mimeHandler(http.FileServer(http.Dir(liveDir)))))
+	r.Handle("/live/*", authMiddleware.RequireLiveToken(liveHLSHandler))
 
-	// Wrap mux with request ID + metrics + security headers middleware globally.
-	rootHandler := securityHeadersMiddleware(middleware.RequestIDMiddleware(middleware.MetricsMiddleware(mux)))
-
-	srv := &http.Server{
+	httpSrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Port),
-		Handler: rootHandler,
+		Handler: r,
 	}
 
 	// Graceful shutdown on SIGTERM / SIGINT.
@@ -248,7 +225,7 @@ func main() {
 			"addr", fmt.Sprintf("http://localhost:%d", cfg.Port),
 			"rtmp", fmt.Sprintf("rtmp://localhost:%d/live", cfg.RTMPPort),
 		)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("server error", "err", err)
 			os.Exit(1)
 		}
@@ -262,7 +239,7 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server shutdown", "err", err)
 	}
 
