@@ -9,12 +9,12 @@ import (
 	"github.com/google/uuid"
 
 	"philos-video/internal/models"
-	"philos-video/internal/repository"
+	"philos-video/internal/storage"
 )
 
 const (
-	maxChatLen      = 500
-	maxSubscribers  = 500
+	maxChatLen     = 500
+	maxSubscribers = 500
 )
 
 // ChatHub fans out live chat messages to SSE subscribers, keyed by stream ID.
@@ -22,10 +22,10 @@ const (
 type ChatHub struct {
 	mu    sync.Mutex
 	rooms map[string]map[chan *models.ChatMessage]struct{}
-	repo  *repository.ChatMessageRepo
+	repo  storage.ChatMessageStorer
 }
 
-func NewChatHub(repo *repository.ChatMessageRepo) *ChatHub {
+func NewChatHub(repo storage.ChatMessageStorer) *ChatHub {
 	return &ChatHub{
 		rooms: make(map[string]map[chan *models.ChatMessage]struct{}),
 		repo:  repo,

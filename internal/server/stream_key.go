@@ -24,7 +24,7 @@ func (s *Server) ListStreamKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	keys, err := s.streamKeyRepo.List(user.ID)
+	keys, err := s.streamKeyRepo.List(r.Context(), user.ID)
 	if err != nil {
 		slog.Error("list stream keys", "err", err)
 		writeError(w, "internal error", http.StatusInternalServerError)
@@ -62,7 +62,7 @@ func (s *Server) CreateStreamKey(w http.ResponseWriter, r *http.Request) {
 		recordVOD = *req.RecordVOD
 	}
 
-	sk, err := s.streamKeyRepo.Create(req.Label, recordVOD, user.ID)
+	sk, err := s.streamKeyRepo.Create(r.Context(), req.Label, recordVOD, user.ID)
 	if err != nil {
 		slog.Error("create stream key", "err", err)
 		writeError(w, "internal error", http.StatusInternalServerError)
@@ -82,7 +82,7 @@ func (s *Server) DeactivateStreamKey(w http.ResponseWriter, r *http.Request, id 
 		writeError(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if err := s.streamKeyRepo.Deactivate(id, user.ID); err != nil {
+	if err := s.streamKeyRepo.Deactivate(r.Context(), id, user.ID); err != nil {
 		slog.Error("deactivate stream key", "id", id, "err", err)
 		writeError(w, "internal error", http.StatusInternalServerError)
 		return
@@ -110,7 +110,7 @@ func (s *Server) UpdateStreamKey(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 
-	if err := s.streamKeyRepo.UpdateRecordVOD(id, *req.RecordVOD, user.ID); err != nil {
+	if err := s.streamKeyRepo.UpdateRecordVOD(r.Context(), id, *req.RecordVOD, user.ID); err != nil {
 		slog.Error("update stream key", "id", id, "err", err)
 		writeError(w, "internal error", http.StatusInternalServerError)
 		return

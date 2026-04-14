@@ -94,7 +94,7 @@ func (s *Server) ReceiveChunk(w http.ResponseWriter, r *http.Request, uploadId s
 
 // GetUploadStatus handles GET /api/v1/uploads/{upload_id}/status.
 func (s *Server) GetUploadStatus(w http.ResponseWriter, r *http.Request, uploadId string) {
-	received, total, err := s.uploadSvc.GetProgress(uploadId)
+	received, total, err := s.uploadSvc.GetProgress(r.Context(), uploadId)
 	if err != nil {
 		slog.Error("get upload progress", "upload_id", uploadId, "err", err)
 		writeError(w, "internal error", http.StatusInternalServerError)
@@ -152,7 +152,7 @@ func (s *Server) UploadThumbnail(w http.ResponseWriter, r *http.Request, uploadI
 	}
 
 	relPath := uploadId + ext
-	if err := s.videoRepo.UpdateThumbnailPath(uploadId, relPath); err != nil {
+	if err := s.videoRepo.UpdateThumbnailPath(r.Context(), uploadId, relPath); err != nil {
 		slog.Error("update thumbnail path", "upload_id", uploadId, "err", err)
 		writeError(w, "internal error", http.StatusInternalServerError)
 		return

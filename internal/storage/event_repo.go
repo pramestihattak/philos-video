@@ -1,4 +1,4 @@
-package repository
+package storage
 
 import (
 	"context"
@@ -54,7 +54,7 @@ func (r *EventRepo) BatchInsert(ctx context.Context, events []models.PlaybackEve
 	return err
 }
 
-// nullable helpers shared across repo package
+// nullable helpers shared across storage package
 func ns(s string) interface{} {
 	if s == "" {
 		return nil

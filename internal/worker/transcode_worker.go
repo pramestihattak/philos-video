@@ -7,21 +7,21 @@ import (
 
 	"philos-video/internal/metrics"
 	"philos-video/internal/models"
-	"philos-video/internal/repository"
 	"philos-video/internal/service"
+	"philos-video/internal/storage"
 )
 
 type TranscodeWorker struct {
-	jobs      *repository.JobRepo
-	videos    *repository.VideoRepo
+	jobs      storage.JobStorer
+	videos    storage.VideoStorer
 	transcode *service.TranscodeService
 	jobCh     <-chan string
 	wg        sync.WaitGroup
 }
 
 func NewTranscodeWorker(
-	jobs *repository.JobRepo,
-	videos *repository.VideoRepo,
+	jobs storage.JobStorer,
+	videos storage.VideoStorer,
 	transcode *service.TranscodeService,
 	jobCh <-chan string,
 ) *TranscodeWorker {
@@ -65,9 +65,9 @@ func (w *TranscodeWorker) run(ctx context.Context, workerID int) {
 			if err := w.transcode.Process(ctx, jobID); err != nil {
 				slog.Error("job failed", "worker_id", workerID, "job_id", jobID, "err", err)
 				metrics.TranscodeJobsTotal.WithLabelValues("failed").Inc()
-				_ = w.jobs.Fail(jobID, err.Error())
-				if job, _ := w.jobs.GetByID(jobID); job != nil {
-					_ = w.videos.UpdateStatus(job.VideoID, models.VideoStatusFailed)
+				_ = w.jobs.Fail(ctx, jobID, err.Error())
+				if job, _ := w.jobs.GetByID(ctx, jobID); job != nil {
+					_ = w.videos.UpdateStatus(ctx, job.VideoID, models.VideoStatusFailed)
 				}
 			} else {
 				metrics.TranscodeJobsTotal.WithLabelValues("completed").Inc()

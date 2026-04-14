@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"philos-video/internal/models"
-	"philos-video/internal/repository"
+	"philos-video/internal/storage"
 )
 
 const (
@@ -16,11 +16,11 @@ const (
 )
 
 type CommentService struct {
-	comments *repository.CommentRepo
-	videos   *repository.VideoRepo
+	comments storage.CommentStorer
+	videos   storage.VideoStorer
 }
 
-func NewCommentService(comments *repository.CommentRepo, videos *repository.VideoRepo) *CommentService {
+func NewCommentService(comments storage.CommentStorer, videos storage.VideoStorer) *CommentService {
 	return &CommentService{comments: comments, videos: videos}
 }
 
@@ -32,7 +32,7 @@ func (s *CommentService) AddComment(ctx context.Context, videoID, userID, userNa
 		return nil, validationErrorf("comment exceeds %d characters", maxCommentLen)
 	}
 
-	video, err := s.videos.GetByID(videoID)
+	video, err := s.videos.GetByID(ctx, videoID)
 	if err != nil || video == nil {
 		return nil, validationErrorf("video not found")
 	}

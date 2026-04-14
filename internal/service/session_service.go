@@ -11,7 +11,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"philos-video/internal/models"
-	"philos-video/internal/repository"
+	"philos-video/internal/storage"
 )
 
 // PlaybackClaims is the JWT claims structure for playback tokens.
@@ -23,15 +23,15 @@ type PlaybackClaims struct {
 }
 
 type SessionService struct {
-	sessions  *repository.SessionRepo
-	videos    *repository.VideoRepo
+	sessions  storage.SessionStorer
+	videos    storage.VideoStorer
 	jwtSecret string
 	jwtExpiry time.Duration
 }
 
 func NewSessionService(
-	sessions *repository.SessionRepo,
-	videos *repository.VideoRepo,
+	sessions storage.SessionStorer,
+	videos storage.VideoStorer,
 	jwtSecret, jwtExpiry string,
 ) (*SessionService, error) {
 	d, err := time.ParseDuration(jwtExpiry)
@@ -47,7 +47,7 @@ func NewSessionService(
 }
 
 func (s *SessionService) CreateSession(ctx context.Context, videoID, deviceType, userAgent, ipAddress string) (*models.PlaybackSession, string, time.Time, error) {
-	video, err := s.videos.GetByID(videoID)
+	video, err := s.videos.GetByID(ctx, videoID)
 	if err != nil {
 		return nil, "", time.Time{}, fmt.Errorf("looking up video: %w", err)
 	}

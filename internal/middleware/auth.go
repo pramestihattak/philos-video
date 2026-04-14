@@ -8,19 +8,28 @@ import (
 	"time"
 
 	"philos-video/internal/metrics"
-	"philos-video/internal/repository"
 	"philos-video/internal/service"
 )
 
+// tokenParser is the minimal interface required to validate a JWT playback token.
+type tokenParser interface {
+	ParseToken(tokenStr string) (*service.PlaybackClaims, error)
+}
+
+// sessionToucher is the minimal interface required to update a session's last-active time.
+type sessionToucher interface {
+	TouchLastActive(ctx context.Context, id string) error
+}
+
 type AuthMiddleware struct {
-	sessionSvc  *service.SessionService
-	sessionRepo *repository.SessionRepo
+	sessionSvc  tokenParser
+	sessionRepo sessionToucher
 
 	touchMu   sync.Mutex
 	lastTouch map[string]time.Time // debounce: session_id → last touch time
 }
 
-func NewAuthMiddleware(sessionSvc *service.SessionService, sessionRepo *repository.SessionRepo) *AuthMiddleware {
+func NewAuthMiddleware(sessionSvc tokenParser, sessionRepo sessionToucher) *AuthMiddleware {
 	return &AuthMiddleware{
 		sessionSvc:  sessionSvc,
 		sessionRepo: sessionRepo,

@@ -4,29 +4,27 @@ import (
 	"philos-video/internal/health"
 	"philos-video/internal/live"
 	"philos-video/internal/middleware"
-	"philos-video/internal/repository"
 	"philos-video/internal/service"
+	"philos-video/internal/storage"
 )
 
 // Server implements api.ServerInterface. It holds all application dependencies.
 type Server struct {
 	// services
-	videoSvc     *service.VideoService
-	uploadSvc    *service.UploadService
-	sessionSvc   *service.SessionService
-	commentSvc   *service.CommentService
-	chatHub      *service.ChatHub
-	oauthSvc     *service.OAuthService
-	userSessionSvc *service.UserSessionService
+	videoSvc       service.VideoServicer
+	uploadSvc      service.UploadServicer
+	sessionSvc     service.SessionServicer
+	commentSvc     service.CommentServicer
+	chatHub        service.ChatHubber
+	oauthSvc       service.OAuthServicer
+	userSessionSvc service.UserSessionServicer
 
-	// repositories accessed directly
-	streamKeyRepo *repository.StreamKeyRepo
-	sessionRepo   *repository.SessionRepo
-	eventRepo     *repository.EventRepo
-	userRepo      *repository.UserRepo
-	videoRepo     interface {
-		UpdateThumbnailPath(id, path string) error
-	}
+	// storage accessed directly by handlers
+	streamKeyRepo storage.StreamKeyStorer
+	sessionRepo   storage.SessionStorer
+	eventRepo     storage.EventStorer
+	userRepo      storage.UserStorer
+	videoRepo     storage.VideoStorer
 
 	// live manager
 	liveMgr *live.Manager
@@ -45,21 +43,19 @@ type Server struct {
 
 // Params holds constructor arguments for Server.
 type Params struct {
-	VideoSvc       *service.VideoService
-	UploadSvc      *service.UploadService
-	SessionSvc     *service.SessionService
-	CommentSvc     *service.CommentService
-	ChatHub        *service.ChatHub
-	OAuthSvc       *service.OAuthService
-	UserSessionSvc *service.UserSessionService
+	VideoSvc       service.VideoServicer
+	UploadSvc      service.UploadServicer
+	SessionSvc     service.SessionServicer
+	CommentSvc     service.CommentServicer
+	ChatHub        service.ChatHubber
+	OAuthSvc       service.OAuthServicer
+	UserSessionSvc service.UserSessionServicer
 
-	StreamKeyRepo *repository.StreamKeyRepo
-	SessionRepo   *repository.SessionRepo
-	EventRepo     *repository.EventRepo
-	UserRepo      *repository.UserRepo
-	VideoRepo     interface {
-		UpdateThumbnailPath(id, path string) error
-	}
+	StreamKeyRepo storage.StreamKeyStorer
+	SessionRepo   storage.SessionStorer
+	EventRepo     storage.EventStorer
+	UserRepo      storage.UserStorer
+	VideoRepo     storage.VideoStorer
 
 	LiveMgr       *live.Manager
 	HealthChecker *health.HealthChecker

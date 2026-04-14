@@ -8,35 +8,35 @@ import (
 	"path/filepath"
 
 	"philos-video/internal/models"
-	"philos-video/internal/repository"
+	"philos-video/internal/storage"
 	"philos-video/internal/transcoder"
 )
 
 type TranscodeService struct {
-	videos  *repository.VideoRepo
-	jobs    *repository.JobRepo
+	videos  storage.VideoStorer
+	jobs    storage.JobStorer
 	dataDir string
 }
 
 func NewTranscodeService(
-	videos *repository.VideoRepo,
-	jobs *repository.JobRepo,
+	videos storage.VideoStorer,
+	jobs storage.JobStorer,
 	dataDir string,
 ) *TranscodeService {
 	return &TranscodeService{videos: videos, jobs: jobs, dataDir: dataDir}
 }
 
 func (s *TranscodeService) Process(ctx context.Context, jobID string) error {
-	job, err := s.jobs.GetByID(jobID)
+	job, err := s.jobs.GetByID(ctx, jobID)
 	if err != nil || job == nil {
 		return fmt.Errorf("job not found: %s", jobID)
 	}
 
-	if err := s.jobs.UpdateRunning(jobID); err != nil {
+	if err := s.jobs.UpdateRunning(ctx, jobID); err != nil {
 		return fmt.Errorf("marking job running: %w", err)
 	}
 
-	video, err := s.videos.GetByID(job.VideoID)
+	video, err := s.videos.GetByID(ctx, job.VideoID)
 	if err != nil || video == nil {
 		return fmt.Errorf("video not found: %s", job.VideoID)
 	}
@@ -55,17 +55,17 @@ func (s *TranscodeService) Process(ctx context.Context, jobID string) error {
 	inputPath := filepath.Join(rawDir, entries[0].Name())
 
 	// probe (0.05)
-	_ = s.jobs.UpdateProgress(jobID, "probe", 0.05)
+	_ = s.jobs.UpdateProgress(ctx, jobID, "probe", 0.05)
 	slog.Info("probing", "job_id", jobID, "input", inputPath)
 
 	info, err := transcoder.Probe(ctx, inputPath)
 	if err != nil {
 		return fmt.Errorf("probe failed: %w", err)
 	}
-	_ = s.videos.UpdateAfterProbe(video.ID, info.Width, info.Height, info.Duration, info.Codec)
+	_ = s.videos.UpdateAfterProbe(ctx, video.ID, info.Width, info.Height, info.Duration, info.Codec)
 
 	// prepare (0.10)
-	_ = s.jobs.UpdateProgress(jobID, "prepare", 0.10)
+	_ = s.jobs.UpdateProgress(ctx, jobID, "prepare", 0.10)
 	profiles := transcoder.BuildLadder(info.Width, info.Height)
 	if len(profiles) == 0 {
 		return fmt.Errorf("no suitable profiles for %dx%d", info.Width, info.Height)
@@ -79,7 +79,7 @@ func (s *TranscodeService) Process(ctx context.Context, jobID string) error {
 	n := float64(len(profiles))
 	for i, p := range profiles {
 		encProg := 0.10 + float64(i)/n*0.70
-		_ = s.jobs.UpdateProgress(jobID, "encode:"+p.Name, encProg)
+		_ = s.jobs.UpdateProgress(ctx, jobID, "encode:"+p.Name, encProg)
 		slog.Info("encoding", "job_id", jobID, "profile", p.Name)
 
 		if err := transcoder.Encode(ctx, inputPath, hlsDir, p); err != nil {
@@ -87,7 +87,7 @@ func (s *TranscodeService) Process(ctx context.Context, jobID string) error {
 		}
 
 		segProg := 0.10 + (float64(i)+0.5)/n*0.70
-		_ = s.jobs.UpdateProgress(jobID, "segment:"+p.Name, segProg)
+		_ = s.jobs.UpdateProgress(ctx, jobID, "segment:"+p.Name, segProg)
 		slog.Info("segmenting", "job_id", jobID, "profile", p.Name)
 
 		if err := transcoder.Segment(ctx, hlsDir, p); err != nil {
@@ -96,7 +96,7 @@ func (s *TranscodeService) Process(ctx context.Context, jobID string) error {
 	}
 
 	// packaging (0.95)
-	_ = s.jobs.UpdateProgress(jobID, "packaging", 0.95)
+	_ = s.jobs.UpdateProgress(ctx, jobID, "packaging", 0.95)
 	slog.Info("writing manifest", "job_id", jobID)
 
 	if err := transcoder.WriteManifest(hlsDir, profiles); err != nil {
@@ -108,12 +108,12 @@ func (s *TranscodeService) Process(ctx context.Context, jobID string) error {
 	}
 
 	hlsPath := filepath.Join("hls", video.ID)
-	_ = s.videos.UpdateHLSPath(video.ID, hlsPath)
+	_ = s.videos.UpdateHLSPath(ctx, video.ID, hlsPath)
 
-	if err := s.videos.UpdateStatus(video.ID, models.VideoStatusReady); err != nil {
+	if err := s.videos.UpdateStatus(ctx, video.ID, models.VideoStatusReady); err != nil {
 		return fmt.Errorf("updating video status: %w", err)
 	}
-	if err := s.jobs.Complete(jobID); err != nil {
+	if err := s.jobs.Complete(ctx, jobID); err != nil {
 		return fmt.Errorf("completing job: %w", err)
 	}
 

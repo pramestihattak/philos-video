@@ -19,6 +19,11 @@ type userLookup interface {
 	GetByID(ctx context.Context, id string) (*models.User, error)
 }
 
+// userSessionParser is the minimal interface required to parse a user session cookie.
+type userSessionParser interface {
+	Parse(tokenStr string) (*service.UserClaims, error)
+}
+
 // CurrentUser returns the signed-in user from the request context, or nil.
 func CurrentUser(ctx context.Context) *models.User {
 	u, _ := ctx.Value(userCtxKey).(*models.User)
@@ -27,11 +32,11 @@ func CurrentUser(ctx context.Context) *models.User {
 
 // UserAuthMiddleware holds the dependencies for the user-auth middleware functions.
 type UserAuthMiddleware struct {
-	sessionSvc *service.UserSessionService
+	sessionSvc userSessionParser
 	userRepo   userLookup
 }
 
-func NewUserAuthMiddleware(svc *service.UserSessionService, userRepo userLookup) *UserAuthMiddleware {
+func NewUserAuthMiddleware(svc userSessionParser, userRepo userLookup) *UserAuthMiddleware {
 	return &UserAuthMiddleware{sessionSvc: svc, userRepo: userRepo}
 }
 

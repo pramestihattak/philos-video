@@ -25,8 +25,8 @@ import (
 	"philos-video/internal/logging"
 	"philos-video/internal/metrics"
 	"philos-video/internal/middleware"
-	"philos-video/internal/repository"
 	"philos-video/internal/server"
+	"philos-video/internal/storage"
 	"philos-video/internal/service"
 	"philos-video/internal/watchdog"
 	"philos-video/internal/worker"
@@ -67,17 +67,17 @@ func main() {
 		}
 	}
 
-	// Repositories
-	userRepo := repository.NewUserRepo(db)
-	videoRepo := repository.NewVideoRepo(db)
-	uploadRepo := repository.NewUploadRepo(db)
-	jobRepo := repository.NewJobRepo(db)
-	sessionRepo := repository.NewSessionRepo(db)
-	eventRepo := repository.NewEventRepo(db)
-	streamKeyRepo := repository.NewStreamKeyRepo(db)
-	liveStreamRepo := repository.NewLiveStreamRepo(db)
-	commentRepo := repository.NewCommentRepo(db)
-	chatMsgRepo := repository.NewChatMessageRepo(db)
+	// Storage
+	userRepo := storage.NewUserRepo(db)
+	videoRepo := storage.NewVideoRepo(db)
+	uploadRepo := storage.NewUploadRepo(db)
+	jobRepo := storage.NewJobRepo(db)
+	sessionRepo := storage.NewSessionRepo(db)
+	eventRepo := storage.NewEventRepo(db)
+	streamKeyRepo := storage.NewStreamKeyRepo(db)
+	liveStreamRepo := storage.NewLiveStreamRepo(db)
+	commentRepo := storage.NewCommentRepo(db)
+	chatMsgRepo := storage.NewChatMessageRepo(db)
 
 	// Comments + live chat
 	commentSvc := service.NewCommentService(commentRepo, videoRepo)
@@ -94,7 +94,7 @@ func main() {
 	w := worker.NewTranscodeWorker(jobRepo, videoRepo, transcodeSvc, jobCh)
 	w.Start(workerCtx, cfg.WorkerCount)
 
-	queued, err := jobRepo.ListQueued()
+	queued, err := jobRepo.ListQueued(context.Background())
 	if err != nil {
 		slog.Warn("listing queued jobs", "err", err)
 	} else {

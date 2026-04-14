@@ -1,6 +1,7 @@
-package repository
+package storage
 
 import (
+	"context"
 	"database/sql"
 	"time"
 
@@ -13,14 +14,6 @@ type VideoRepo struct {
 
 func NewVideoRepo(db *sql.DB) *VideoRepo {
 	return &VideoRepo{db: db}
-}
-
-func (r *VideoRepo) Create(v *models.Video) error {
-	_, err := r.db.Exec(
-		`INSERT INTO videos (id, user_id, title, visibility, status) VALUES ($1, $2, $3, $4, $5)`,
-		v.ID, v.UserID, v.Title, v.Visibility, v.Status,
-	)
-	return err
 }
 
 // getByIDQuery fetches a single video by ID using a correlated subquery for play count
@@ -81,9 +74,17 @@ func scanVideo(s interface{ Scan(...any) error }) (*models.Video, error) {
 	return v, err
 }
 
+func (r *VideoRepo) Create(ctx context.Context, v *models.Video) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO videos (id, user_id, title, visibility, status) VALUES ($1, $2, $3, $4, $5)`,
+		v.ID, v.UserID, v.Title, v.Visibility, v.Status,
+	)
+	return err
+}
+
 // GetByID returns a video by ID regardless of owner (used by public playback paths).
-func (r *VideoRepo) GetByID(id string) (*models.Video, error) {
-	row := r.db.QueryRow(getByIDQuery, id)
+func (r *VideoRepo) GetByID(ctx context.Context, id string) (*models.Video, error) {
+	row := r.db.QueryRowContext(ctx, getByIDQuery, id)
 	v, err := scanVideo(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -92,8 +93,8 @@ func (r *VideoRepo) GetByID(id string) (*models.Video, error) {
 }
 
 // GetByIDForUser returns a video only if it belongs to the given user.
-func (r *VideoRepo) GetByIDForUser(id, userID string) (*models.Video, error) {
-	row := r.db.QueryRow(getByIDQuery+` AND v.user_id = $2`, id, userID)
+func (r *VideoRepo) GetByIDForUser(ctx context.Context, id, userID string) (*models.Video, error) {
+	row := r.db.QueryRowContext(ctx, getByIDQuery+` AND v.user_id = $2`, id, userID)
 	v, err := scanVideo(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -102,8 +103,8 @@ func (r *VideoRepo) GetByIDForUser(id, userID string) (*models.Video, error) {
 }
 
 // ListPublic returns public/unlisted ready videos visible to guests.
-func (r *VideoRepo) ListPublic(limit, offset int) ([]*models.Video, error) {
-	rows, err := r.db.Query(listPublicQuery, limit, offset)
+func (r *VideoRepo) ListPublic(ctx context.Context, limit, offset int) ([]*models.Video, error) {
+	rows, err := r.db.QueryContext(ctx, listPublicQuery, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -121,8 +122,8 @@ func (r *VideoRepo) ListPublic(limit, offset int) ([]*models.Video, error) {
 }
 
 // List returns up to limit videos for the given user, ordered by creation time descending.
-func (r *VideoRepo) List(limit, offset int, userID string) ([]*models.Video, error) {
-	rows, err := r.db.Query(listQuery, limit, offset, userID)
+func (r *VideoRepo) List(ctx context.Context, limit, offset int, userID string) ([]*models.Video, error) {
+	rows, err := r.db.QueryContext(ctx, listQuery, limit, offset, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -139,40 +140,40 @@ func (r *VideoRepo) List(limit, offset int, userID string) ([]*models.Video, err
 	return videos, rows.Err()
 }
 
-func (r *VideoRepo) UpdateStatus(id, status string) error {
-	_, err := r.db.Exec(
+func (r *VideoRepo) UpdateStatus(ctx context.Context, id, status string) error {
+	_, err := r.db.ExecContext(ctx,
 		`UPDATE videos SET status=$1, updated_at=$2 WHERE id=$3`,
 		status, time.Now(), id,
 	)
 	return err
 }
 
-func (r *VideoRepo) UpdateAfterProbe(id string, width, height int, duration, codec string) error {
-	_, err := r.db.Exec(
+func (r *VideoRepo) UpdateAfterProbe(ctx context.Context, id string, width, height int, duration, codec string) error {
+	_, err := r.db.ExecContext(ctx,
 		`UPDATE videos SET width=$1, height=$2, duration=$3, codec=$4, updated_at=$5 WHERE id=$6`,
 		width, height, duration, codec, time.Now(), id,
 	)
 	return err
 }
 
-func (r *VideoRepo) UpdateHLSPath(id, hlsPath string) error {
-	_, err := r.db.Exec(
+func (r *VideoRepo) UpdateHLSPath(ctx context.Context, id, hlsPath string) error {
+	_, err := r.db.ExecContext(ctx,
 		`UPDATE videos SET hls_path=$1, updated_at=$2 WHERE id=$3`,
 		hlsPath, time.Now(), id,
 	)
 	return err
 }
 
-func (r *VideoRepo) UpdateSizeBytes(id string, size int64) error {
-	_, err := r.db.Exec(
+func (r *VideoRepo) UpdateSizeBytes(ctx context.Context, id string, size int64) error {
+	_, err := r.db.ExecContext(ctx,
 		`UPDATE videos SET size_bytes=$1, updated_at=$2 WHERE id=$3`,
 		size, time.Now(), id,
 	)
 	return err
 }
 
-func (r *VideoRepo) UpdateThumbnailPath(id, thumbnailPath string) error {
-	_, err := r.db.Exec(
+func (r *VideoRepo) UpdateThumbnailPath(ctx context.Context, id, thumbnailPath string) error {
+	_, err := r.db.ExecContext(ctx,
 		`UPDATE videos SET thumbnail_path=$1, updated_at=$2 WHERE id=$3`,
 		thumbnailPath, time.Now(), id,
 	)
@@ -180,8 +181,8 @@ func (r *VideoRepo) UpdateThumbnailPath(id, thumbnailPath string) error {
 }
 
 // UpdateVisibility changes the visibility of a video, scoped to its owner.
-func (r *VideoRepo) UpdateVisibility(id, userID, visibility string) error {
-	_, err := r.db.Exec(
+func (r *VideoRepo) UpdateVisibility(ctx context.Context, id, userID, visibility string) error {
+	_, err := r.db.ExecContext(ctx,
 		`UPDATE videos SET visibility=$1, updated_at=$2 WHERE id=$3 AND user_id=$4`,
 		visibility, time.Now(), id, userID,
 	)
@@ -190,8 +191,8 @@ func (r *VideoRepo) UpdateVisibility(id, userID, visibility string) error {
 
 // Delete removes a video and all dependent rows in a transaction.
 // It requires the owning userID to prevent cross-user deletes.
-func (r *VideoRepo) Delete(id, userID string) error {
-	tx, err := r.db.Begin()
+func (r *VideoRepo) Delete(ctx context.Context, id, userID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -199,7 +200,7 @@ func (r *VideoRepo) Delete(id, userID string) error {
 
 	// Confirm ownership before touching anything.
 	var exists bool
-	if err := tx.QueryRow(`SELECT TRUE FROM videos WHERE id=$1 AND user_id=$2`, id, userID).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT TRUE FROM videos WHERE id=$1 AND user_id=$2`, id, userID).Scan(&exists); err != nil {
 		if err == sql.ErrNoRows {
 			return nil // not found or not owner — treat as no-op
 		}
@@ -207,24 +208,24 @@ func (r *VideoRepo) Delete(id, userID string) error {
 	}
 
 	// Delete comments for this video.
-	if _, err := tx.Exec(`DELETE FROM comments WHERE video_id = $1`, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM comments WHERE video_id = $1`, id); err != nil {
 		return err
 	}
 
 	// Delete events for sessions belonging to this video.
-	if _, err := tx.Exec(`
+	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM playback_events pe
 		USING playback_sessions ps
 		WHERE pe.session_id = ps.id AND ps.video_id = $1`, id); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM playback_sessions WHERE video_id = $1`, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_sessions WHERE video_id = $1`, id); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM transcode_jobs WHERE video_id = $1`, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM transcode_jobs WHERE video_id = $1`, id); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM videos WHERE id = $1`, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM videos WHERE id = $1`, id); err != nil {
 		return err
 	}
 

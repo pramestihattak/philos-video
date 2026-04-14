@@ -29,7 +29,7 @@ func (s *Server) ListVideos(w http.ResponseWriter, r *http.Request, params api.L
 	}
 	offset := (page - 1) * limit
 
-	videos, err := s.videoSvc.ListVideos(limit, offset, userID)
+	videos, err := s.videoSvc.ListVideos(r.Context(), limit, offset, userID)
 	if err != nil {
 		slog.Error("list videos", "err", err)
 		writeError(w, "internal error", http.StatusInternalServerError)
@@ -44,7 +44,7 @@ func (s *Server) ListVideos(w http.ResponseWriter, r *http.Request, params api.L
 
 // GetVideo handles GET /api/v1/videos/{id}.
 func (s *Server) GetVideo(w http.ResponseWriter, r *http.Request, id string) {
-	video, err := s.videoSvc.GetVideo(id)
+	video, err := s.videoSvc.GetVideo(r.Context(), id)
 	if err != nil {
 		slog.Error("get video", "id", id, "err", err)
 		writeError(w, "internal error", http.StatusInternalServerError)
@@ -66,7 +66,7 @@ func (s *Server) GetVideo(w http.ResponseWriter, r *http.Request, id string) {
 
 // GetVideoStatus handles GET /api/v1/videos/{id}/status.
 func (s *Server) GetVideoStatus(w http.ResponseWriter, r *http.Request, id string) {
-	vs, err := s.videoSvc.GetVideoStatus(id)
+	vs, err := s.videoSvc.GetVideoStatus(r.Context(), id)
 	if err != nil {
 		slog.Error("get video status", "id", id, "err", err)
 		writeError(w, "internal error", http.StatusInternalServerError)

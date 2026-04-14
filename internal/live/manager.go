@@ -1,6 +1,7 @@
 package live
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -11,15 +12,15 @@ import (
 
 	"philos-video/internal/metrics"
 	"philos-video/internal/models"
-	"philos-video/internal/repository"
+	"philos-video/internal/storage"
 )
 
 // Manager coordinates live stream lifecycle: stream key validation, FFmpeg
 // session management, viewer counting, and VOD conversion on stream end.
 type Manager struct {
-	streamKeyRepo  *repository.StreamKeyRepo
-	liveStreamRepo *repository.LiveStreamRepo
-	videoRepo      *repository.VideoRepo
+	streamKeyRepo  storage.StreamKeyStorer
+	liveStreamRepo storage.LiveStreamStorer
+	videoRepo      storage.VideoStorer
 	dataDir        string
 
 	mu         sync.RWMutex
@@ -28,9 +29,9 @@ type Manager struct {
 }
 
 func NewManager(
-	streamKeyRepo *repository.StreamKeyRepo,
-	liveStreamRepo *repository.LiveStreamRepo,
-	videoRepo *repository.VideoRepo,
+	streamKeyRepo storage.StreamKeyStorer,
+	liveStreamRepo storage.LiveStreamStorer,
+	videoRepo storage.VideoStorer,
 	dataDir string,
 ) *Manager {
 	return &Manager{
@@ -46,7 +47,10 @@ func NewManager(
 const maxLiveStreams = 10
 
 // StartStream validates the stream key, creates DB records, and starts FFmpeg.
+// Called from the RTMP handler — no request context available, so we use Background.
 func (m *Manager) StartStream(streamKey string) (*models.LiveStream, error) {
+	ctx := context.Background()
+
 	m.mu.RLock()
 	activeCount := len(m.sessions)
 	m.mu.RUnlock()
@@ -55,7 +59,7 @@ func (m *Manager) StartStream(streamKey string) (*models.LiveStream, error) {
 		return nil, fmt.Errorf("max concurrent streams (%d) reached", maxLiveStreams)
 	}
 
-	sk, err := m.streamKeyRepo.GetByID(streamKey)
+	sk, err := m.streamKeyRepo.GetByID(ctx, streamKey)
 	if err != nil {
 		metrics.RTMPConnectionsTotal.WithLabelValues("rejected").Inc()
 		return nil, fmt.Errorf("looking up stream key: %w", err)
@@ -65,14 +69,14 @@ func (m *Manager) StartStream(streamKey string) (*models.LiveStream, error) {
 		return nil, fmt.Errorf("invalid or inactive stream key")
 	}
 
-	stream, err := m.liveStreamRepo.Create(sk.ID, sk.UserLabel, sk.RecordVOD, sk.UserID)
+	stream, err := m.liveStreamRepo.Create(ctx, sk.ID, sk.UserLabel, sk.RecordVOD, sk.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("creating live stream record: %w", err)
 	}
 
 	sess, err := newTranscodeSession(stream.ID, m.dataDir)
 	if err != nil {
-		_ = m.liveStreamRepo.UpdateStatus(stream.ID, models.StreamStatusEnded)
+		_ = m.liveStreamRepo.UpdateStatus(ctx, stream.ID, models.StreamStatusEnded)
 		return nil, fmt.Errorf("starting transcode session: %w", err)
 	}
 
@@ -84,12 +88,12 @@ func (m *Manager) StartStream(streamKey string) (*models.LiveStream, error) {
 	metrics.LiveStreamsActive.Inc()
 	metrics.RTMPConnectionsTotal.WithLabelValues("accepted").Inc()
 
-	if err := m.liveStreamRepo.UpdateStarted(stream.ID); err != nil {
+	if err := m.liveStreamRepo.UpdateStarted(ctx, stream.ID); err != nil {
 		slog.Warn("updating stream started", "stream_id", stream.ID, "err", err)
 	}
 
 	// Re-fetch so caller gets updated status/timestamps.
-	updated, _ := m.liveStreamRepo.GetByID(stream.ID)
+	updated, _ := m.liveStreamRepo.GetByID(ctx, stream.ID)
 	if updated != nil {
 		return updated, nil
 	}
@@ -119,7 +123,10 @@ func (m *Manager) WriteAudio(streamID string, timestamp uint32, payload interfac
 }
 
 // EndStream stops transcoding, marks stream ended, and schedules VOD conversion.
+// Called from the RTMP handler — no request context available, so we use Background.
 func (m *Manager) EndStream(streamID string) {
+	ctx := context.Background()
+
 	m.mu.Lock()
 	sess := m.sessions[streamID]
 	startTime := m.startTimes[streamID]
@@ -137,11 +144,11 @@ func (m *Manager) EndStream(streamID string) {
 		metrics.LiveStreamDuration.Observe(time.Since(startTime).Seconds())
 	}
 
-	if err := m.liveStreamRepo.UpdateEnded(streamID); err != nil {
+	if err := m.liveStreamRepo.UpdateEnded(ctx, streamID); err != nil {
 		slog.Warn("marking stream ended", "stream_id", streamID, "err", err)
 	}
 
-	stream, err := m.liveStreamRepo.GetByID(streamID)
+	stream, err := m.liveStreamRepo.GetByID(ctx, streamID)
 	if err != nil {
 		slog.Warn("fetching stream for VOD decision", "stream_id", streamID, "err", err)
 		return
@@ -154,7 +161,9 @@ func (m *Manager) EndStream(streamID string) {
 }
 
 func (m *Manager) convertToVOD(streamID string) {
-	stream, err := m.liveStreamRepo.GetByID(streamID)
+	ctx := context.Background()
+
+	stream, err := m.liveStreamRepo.GetByID(ctx, streamID)
 	if err != nil || stream == nil {
 		slog.Warn("converting to VOD: stream not found", "stream_id", streamID)
 		return
@@ -174,7 +183,7 @@ func (m *Manager) convertToVOD(streamID string) {
 		Visibility: models.VisibilityPrivate,
 		Status:     models.VideoStatusReady,
 	}
-	if err := m.videoRepo.Create(v); err != nil {
+	if err := m.videoRepo.Create(ctx, v); err != nil {
 		slog.Error("creating VOD video", "err", err)
 		return
 	}
@@ -182,12 +191,12 @@ func (m *Manager) convertToVOD(streamID string) {
 	// HLS path is relative to data/hls — but live output is in data/live/{stream_id}.
 	// We store the full relative path from dataDir.
 	hlsPath := filepath.Join("live", streamID)
-	if err := m.videoRepo.UpdateHLSPath(videoID, hlsPath); err != nil {
+	if err := m.videoRepo.UpdateHLSPath(ctx, videoID, hlsPath); err != nil {
 		slog.Error("setting VOD hls_path", "err", err)
 		return
 	}
 
-	if err := m.liveStreamRepo.UpdateVideoID(streamID, videoID); err != nil {
+	if err := m.liveStreamRepo.UpdateVideoID(ctx, streamID, videoID); err != nil {
 		slog.Warn("linking VOD to stream", "err", err)
 	}
 
@@ -196,12 +205,12 @@ func (m *Manager) convertToVOD(streamID string) {
 
 // GetStream returns a live stream by ID.
 func (m *Manager) GetStream(id string) (*models.LiveStream, error) {
-	return m.liveStreamRepo.GetByID(id)
+	return m.liveStreamRepo.GetByID(context.Background(), id)
 }
 
 // ListLive returns all currently live streams.
 func (m *Manager) ListLive() ([]*models.LiveStream, error) {
-	return m.liveStreamRepo.ListLive()
+	return m.liveStreamRepo.ListLive(context.Background())
 }
 
 // ActiveCount returns the number of active transcode sessions.

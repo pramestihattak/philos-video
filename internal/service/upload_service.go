@@ -7,30 +7,29 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
 	"philos-video/internal/metrics"
 	"philos-video/internal/models"
-	"philos-video/internal/repository"
+	"philos-video/internal/storage"
 )
 
 type UploadService struct {
-	videos   *repository.VideoRepo
-	uploads  *repository.UploadRepo
-	jobs     *repository.JobRepo
-	userRepo *repository.UserRepo
+	videos   storage.VideoStorer
+	uploads  storage.UploadStorer
+	jobs     storage.JobStorer
+	userRepo storage.UserStorer
 	dataDir  string
 	jobCh    chan<- string
 }
 
 func NewUploadService(
-	videos *repository.VideoRepo,
-	uploads *repository.UploadRepo,
-	jobs *repository.JobRepo,
-	userRepo *repository.UserRepo,
+	videos storage.VideoStorer,
+	uploads storage.UploadStorer,
+	jobs storage.JobStorer,
+	userRepo storage.UserStorer,
 	dataDir string,
 	jobCh chan<- string,
 ) *UploadService {
@@ -89,11 +88,11 @@ func (s *UploadService) InitUpload(ctx context.Context, user *models.User, filen
 		Visibility: visibility,
 		Status:     models.VideoStatusUploading,
 	}
-	if err := s.videos.Create(video); err != nil {
+	if err := s.videos.Create(ctx, video); err != nil {
 		return "", fmt.Errorf("creating video record: %w", err)
 	}
 
-	if err := s.uploads.CreateChunks(id, totalChunks); err != nil {
+	if err := s.uploads.CreateChunks(ctx, id, totalChunks); err != nil {
 		return "", fmt.Errorf("creating chunk records: %w", err)
 	}
 
@@ -113,14 +112,6 @@ func (s *UploadService) InitUpload(ctx context.Context, user *models.User, filen
 	return id, nil
 }
 
-// ErrQuotaExceeded is returned when a user's upload quota would be exceeded.
-var ErrQuotaExceeded = &quotaError{}
-
-type quotaError struct{}
-
-func (e *quotaError) Error() string { return "upload quota exceeded" }
-func (e *quotaError) HTTPStatus() int { return http.StatusRequestEntityTooLarge }
-
 func (s *UploadService) ReceiveChunk(ctx context.Context, uploadID string, chunkNumber int, data io.Reader) error {
 	chunkPath := filepath.Join(s.dataDir, "chunks", uploadID, fmt.Sprintf("%05d", chunkNumber))
 	f, err := os.Create(chunkPath)
@@ -134,11 +125,11 @@ func (s *UploadService) ReceiveChunk(ctx context.Context, uploadID string, chunk
 	}
 	f.Close()
 
-	if err := s.uploads.MarkChunkReceived(uploadID, chunkNumber); err != nil {
+	if err := s.uploads.MarkChunkReceived(ctx, uploadID, chunkNumber); err != nil {
 		return fmt.Errorf("marking chunk received: %w", err)
 	}
 
-	received, total, err := s.uploads.GetProgress(uploadID)
+	received, total, err := s.uploads.GetProgress(ctx, uploadID)
 	if err != nil {
 		return fmt.Errorf("getting progress: %w", err)
 	}
@@ -154,7 +145,7 @@ func (s *UploadService) ReceiveChunk(ctx context.Context, uploadID string, chunk
 				slog.Error("assembly failed", "upload_id", uploadID, "err", err)
 				metrics.UploadsTotal.WithLabelValues("failed").Inc()
 				metrics.ActiveUploads.Dec()
-				_ = s.videos.UpdateStatus(uploadID, models.VideoStatusFailed)
+				_ = s.videos.UpdateStatus(assembleCtx, uploadID, models.VideoStatusFailed)
 			} else {
 				metrics.UploadsTotal.WithLabelValues("completed").Inc()
 				metrics.ActiveUploads.Dec()
@@ -168,7 +159,7 @@ func (s *UploadService) ReceiveChunk(ctx context.Context, uploadID string, chunk
 func (s *UploadService) assemble(ctx context.Context, uploadID string, totalChunks int) error {
 	slog.Info("assembling upload", "upload_id", uploadID)
 
-	video, err := s.videos.GetByID(uploadID)
+	video, err := s.videos.GetByID(ctx, uploadID)
 	if err != nil || video == nil {
 		return fmt.Errorf("video not found: %s", uploadID)
 	}
@@ -215,7 +206,7 @@ func (s *UploadService) assemble(ctx context.Context, uploadID string, totalChun
 	// Record assembled file size and update user quota usage.
 	if fi, err := os.Stat(outPath); err == nil {
 		size := fi.Size()
-		if err := s.videos.UpdateSizeBytes(uploadID, size); err != nil {
+		if err := s.videos.UpdateSizeBytes(ctx, uploadID, size); err != nil {
 			slog.Warn("updating video size_bytes", "upload_id", uploadID, "err", err)
 		}
 		if video.UserID != "" {
@@ -239,11 +230,11 @@ func (s *UploadService) assemble(ctx context.Context, uploadID string, totalChun
 		VideoID: uploadID,
 		Status:  models.JobStatusQueued,
 	}
-	if err := s.jobs.Create(job); err != nil {
+	if err := s.jobs.Create(ctx, job); err != nil {
 		return fmt.Errorf("creating job: %w", err)
 	}
 
-	if err := s.videos.UpdateStatus(uploadID, models.VideoStatusProcessing); err != nil {
+	if err := s.videos.UpdateStatus(ctx, uploadID, models.VideoStatusProcessing); err != nil {
 		return fmt.Errorf("updating video status: %w", err)
 	}
 
@@ -252,6 +243,6 @@ func (s *UploadService) assemble(ctx context.Context, uploadID string, totalChun
 	return nil
 }
 
-func (s *UploadService) GetProgress(uploadID string) (received, total int, err error) {
-	return s.uploads.GetProgress(uploadID)
+func (s *UploadService) GetProgress(ctx context.Context, uploadID string) (received, total int, err error) {
+	return s.uploads.GetProgress(ctx, uploadID)
 }

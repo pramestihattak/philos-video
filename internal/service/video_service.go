@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"philos-video/internal/models"
-	"philos-video/internal/repository"
+	"philos-video/internal/storage"
 )
 
 const (
@@ -17,13 +17,13 @@ const (
 )
 
 type VideoService struct {
-	videos   *repository.VideoRepo
-	jobs     *repository.JobRepo
-	userRepo *repository.UserRepo
+	videos   storage.VideoStorer
+	jobs     storage.JobStorer
+	userRepo storage.UserStorer
 	dataDir  string
 }
 
-func NewVideoService(videos *repository.VideoRepo, jobs *repository.JobRepo, userRepo *repository.UserRepo, dataDir string) *VideoService {
+func NewVideoService(videos storage.VideoStorer, jobs storage.JobStorer, userRepo storage.UserStorer, dataDir string) *VideoService {
 	return &VideoService{videos: videos, jobs: jobs, userRepo: userRepo, dataDir: dataDir}
 }
 
@@ -33,12 +33,12 @@ type VideoStatus struct {
 	Progress float64              `json:"progress"`
 }
 
-func (s *VideoService) GetVideo(id string) (*models.Video, error) {
-	return s.videos.GetByID(id)
+func (s *VideoService) GetVideo(ctx context.Context, id string) (*models.Video, error) {
+	return s.videos.GetByID(ctx, id)
 }
 
 // ListVideos returns videos for a user (owner-scoped) or public/unlisted videos if userID is empty.
-func (s *VideoService) ListVideos(limit, offset int, userID string) ([]*models.Video, error) {
+func (s *VideoService) ListVideos(ctx context.Context, limit, offset int, userID string) ([]*models.Video, error) {
 	if limit <= 0 {
 		limit = DefaultVideoPageLimit
 	}
@@ -46,18 +46,18 @@ func (s *VideoService) ListVideos(limit, offset int, userID string) ([]*models.V
 		limit = MaxVideoPageLimit
 	}
 	if userID == "" {
-		return s.videos.ListPublic(limit, offset)
+		return s.videos.ListPublic(ctx, limit, offset)
 	}
-	return s.videos.List(limit, offset, userID)
+	return s.videos.List(ctx, limit, offset, userID)
 }
 
-func (s *VideoService) GetVideoStatus(id string) (*VideoStatus, error) {
-	v, err := s.videos.GetByID(id)
+func (s *VideoService) GetVideoStatus(ctx context.Context, id string) (*VideoStatus, error) {
+	v, err := s.videos.GetByID(ctx, id)
 	if err != nil || v == nil {
 		return nil, err
 	}
 
-	job, err := s.jobs.GetByVideoID(id)
+	job, err := s.jobs.GetByVideoID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (s *VideoService) GetVideoStatus(id string) (*VideoStatus, error) {
 
 // DeleteVideo removes a video and its HLS files. Requires the owning userID.
 func (s *VideoService) DeleteVideo(ctx context.Context, id, userID string) error {
-	v, err := s.videos.GetByIDForUser(id, userID)
+	v, err := s.videos.GetByIDForUser(ctx, id, userID)
 	if err != nil {
 		return fmt.Errorf("looking up video: %w", err)
 	}
@@ -82,7 +82,7 @@ func (s *VideoService) DeleteVideo(ctx context.Context, id, userID string) error
 		return nil // not found or not owner — silent no-op
 	}
 
-	if err := s.videos.Delete(id, userID); err != nil {
+	if err := s.videos.Delete(ctx, id, userID); err != nil {
 		return fmt.Errorf("deleting from database: %w", err)
 	}
 
@@ -110,5 +110,5 @@ func (s *VideoService) UpdateVisibility(ctx context.Context, id, userID, visibil
 	default:
 		return fmt.Errorf("invalid visibility %q", visibility)
 	}
-	return s.videos.UpdateVisibility(id, userID, visibility)
+	return s.videos.UpdateVisibility(ctx, id, userID, visibility)
 }
