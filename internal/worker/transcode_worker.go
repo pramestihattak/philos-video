@@ -7,28 +7,29 @@ import (
 
 	"philos-video/internal/metrics"
 	"philos-video/internal/models"
-	"philos-video/internal/service"
-	"philos-video/internal/storage"
+	"philos-video/internal/service/transcode"
+	jobrepo "philos-video/internal/storage/job"
+	videorepo "philos-video/internal/storage/video"
 )
 
 type TranscodeWorker struct {
-	jobs      storage.JobStorer
-	videos    storage.VideoStorer
-	transcode *service.TranscodeService
+	jobs      jobrepo.Repository
+	videos    videorepo.Repository
+	transcode *transcode.Service
 	jobCh     <-chan string
 	wg        sync.WaitGroup
 }
 
 func NewTranscodeWorker(
-	jobs storage.JobStorer,
-	videos storage.VideoStorer,
-	transcode *service.TranscodeService,
+	jobs jobrepo.Repository,
+	videos videorepo.Repository,
+	svc *transcode.Service,
 	jobCh <-chan string,
 ) *TranscodeWorker {
 	return &TranscodeWorker{
 		jobs:      jobs,
 		videos:    videos,
-		transcode: transcode,
+		transcode: svc,
 		jobCh:     jobCh,
 	}
 }

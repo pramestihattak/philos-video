@@ -1,0 +1,14 @@
+type: object
+required:
+  - session_id
+  - manifest_url
+  - token
+properties:
+  session_id:
+    type: string
+  manifest_url:
+    type: string
+  token:
+    type: string
+  telemetry_url:
+    type: string

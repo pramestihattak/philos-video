@@ -1,0 +1,9 @@
+type: object
+required:
+  - received
+  - total
+properties:
+  received:
+    type: integer
+  total:
+    type: integer

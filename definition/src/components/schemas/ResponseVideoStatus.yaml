@@ -1,0 +1,8 @@
+type: object
+required:
+  - video
+properties:
+  video:
+    $ref: './ResponseVideo.yaml'
+  job:
+    $ref: './ResponseTranscodeJob.yaml'

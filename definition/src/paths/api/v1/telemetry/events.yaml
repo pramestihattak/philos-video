@@ -21,7 +21,7 @@ post:
               type: array
               maxItems: 1000
               items:
-                $ref: '../../../components/schemas/PlaybackEvent.yaml'
+                $ref: '../../../../components/schemas/PlaybackEvent.yaml'
   responses:
     '200':
       description: Events accepted
@@ -39,16 +39,16 @@ post:
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/Error.yaml'
+            $ref: '../../../../components/schemas/Error.yaml'
     '404':
       description: Session not found
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/Error.yaml'
+            $ref: '../../../../components/schemas/Error.yaml'
     '410':
       description: Session ended
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/Error.yaml'
+            $ref: '../../../../components/schemas/Error.yaml'

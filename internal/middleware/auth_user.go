@@ -7,7 +7,7 @@ import (
 	"net/url"
 
 	"philos-video/internal/models"
-	"philos-video/internal/service"
+	"philos-video/internal/service/usersession"
 )
 
 type ctxKey int
@@ -21,7 +21,7 @@ type userLookup interface {
 
 // userSessionParser is the minimal interface required to parse a user session cookie.
 type userSessionParser interface {
-	Parse(tokenStr string) (*service.UserClaims, error)
+	Parse(tokenStr string) (*usersession.UserClaims, error)
 }
 
 // CurrentUser returns the signed-in user from the request context, or nil.

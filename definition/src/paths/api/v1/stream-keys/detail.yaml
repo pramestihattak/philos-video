@@ -1,0 +1,58 @@
+delete:
+  operationId: DeactivateStreamKey
+  summary: Deactivate a stream key
+  tags: [stream-keys]
+  security:
+    - CookieAuth: []
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '204':
+      description: Stream key deactivated
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'
+    '404':
+      description: Stream key not found
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'
+
+patch:
+  operationId: UpdateStreamKey
+  summary: Update a stream key
+  tags: [stream-keys]
+  security:
+    - CookieAuth: []
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            record_vod:
+              type: boolean
+  responses:
+    '204':
+      description: Stream key updated
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'

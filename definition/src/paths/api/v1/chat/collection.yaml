@@ -1,0 +1,71 @@
+get:
+  operationId: ListChatMessages
+  summary: List chat messages for a live stream
+  tags: [chat]
+  parameters:
+    - name: stream_id
+      in: path
+      required: true
+      schema:
+        type: string
+    - $ref: '../../../../components/parameters/LimitParam.yaml'
+    - name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+  responses:
+    '200':
+      description: List of chat messages
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: '../../../../components/schemas/ResponseChatMessage.yaml'
+
+post:
+  operationId: SendChatMessage
+  summary: Send a chat message to a live stream
+  tags: [chat]
+  security:
+    - CookieAuth: []
+  parameters:
+    - name: stream_id
+      in: path
+      required: true
+      schema:
+        type: string
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - body
+          properties:
+            body:
+              type: string
+              minLength: 1
+              maxLength: 500
+  responses:
+    '201':
+      description: Message sent
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/ResponseChatMessage.yaml'
+    '400':
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'

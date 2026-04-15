@@ -1,4 +1,4 @@
-.PHONY: transcode serve dev build clean db stop migrate-new migrate-up migrate-down migrate-status spec-validate spec-generate help
+.PHONY: transcode serve dev build clean db stop migrate-new migrate-up migrate-down migrate-status spec-validate spec-generate spec-docs help
 
 -include .env
 export
@@ -56,13 +56,17 @@ migrate-down:
 migrate-status:
 	$(GOOSE) status
 
-## spec-validate: validate the OpenAPI spec
+## spec-validate: validate definition/api.yaml (bundles src/ first)
 spec-validate:
-	cd definition && npx --yes @apidevtools/swagger-cli validate api.yaml
+	$(MAKE) -C definition validate
 
-## spec-generate: regenerate internal/api/api.gen.go from definition/api.yaml
+## spec-generate: bundle src/ → api.yaml then regenerate gen/api/api.gen.go
 spec-generate:
-	cd definition && oapi-codegen --config=oapi-codegen.yaml api.yaml
+	$(MAKE) -C definition build generate-gen
+
+## spec-docs: serve interactive Swagger UI at http://localhost:8081 (requires Docker)
+spec-docs:
+	$(MAKE) -C definition docs
 
 ## clean: remove build artifacts and data directory
 clean:

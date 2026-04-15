@@ -3,40 +3,46 @@ info:
   title: PramTube API
   description: Self-hosted video streaming platform API
   version: 1.0.0
-
 servers:
-  - url: http://localhost:8080
+  - url: 'http://localhost:8080'
     description: Local development
-
 components:
   securitySchemes:
     CookieAuth:
       type: apiKey
       in: cookie
       name: philos_session
-
   schemas:
     Error:
       type: object
-      required: [error]
+      required:
+        - error
       properties:
         error:
           type: string
+          description: Human-readable error message
         code:
           type: string
-
+          description: Machine-readable error code
     User:
       type: object
-      required: [id, email, upload_quota_bytes, used_bytes, created_at]
+      required:
+        - id
+        - email
+        - upload_quota_bytes
+        - used_bytes
+        - created_at
       properties:
         id:
           type: string
         email:
           type: string
+          format: email
         name:
           type: string
         picture:
           type: string
+          format: uri
         upload_quota_bytes:
           type: integer
           format: int64
@@ -46,10 +52,16 @@ components:
         created_at:
           type: string
           format: date-time
-
     Video:
       type: object
-      required: [id, title, visibility, status, play_count, created_at, updated_at]
+      required:
+        - id
+        - title
+        - visibility
+        - status
+        - play_count
+        - created_at
+        - updated_at
       properties:
         id:
           type: string
@@ -63,10 +75,17 @@ components:
           type: string
         visibility:
           type: string
-          enum: [private, unlisted, public]
+          enum:
+            - private
+            - unlisted
+            - public
         status:
           type: string
-          enum: [uploading, processing, ready, failed]
+          enum:
+            - uploading
+            - processing
+            - ready
+            - failed
         width:
           type: integer
         height:
@@ -90,10 +109,15 @@ components:
         updated_at:
           type: string
           format: date-time
-
     TranscodeJob:
       type: object
-      required: [id, video_id, status, progress, created_at, updated_at]
+      required:
+        - id
+        - video_id
+        - status
+        - progress
+        - created_at
+        - updated_at
       properties:
         id:
           type: string
@@ -101,7 +125,11 @@ components:
           type: string
         status:
           type: string
-          enum: [queued, running, completed, failed]
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
         stage:
           type: string
         progress:
@@ -117,20 +145,15 @@ components:
         updated_at:
           type: string
           format: date-time
-
-    VideoStatus:
-      x-go-name: VideoStatusResponse
-      type: object
-      required: [video]
-      properties:
-        video:
-          $ref: '#/components/schemas/Video'
-        job:
-          $ref: '#/components/schemas/TranscodeJob'
-
     Comment:
       type: object
-      required: [id, video_id, user_id, user_name, body, created_at]
+      required:
+        - id
+        - video_id
+        - user_id
+        - user_name
+        - body
+        - created_at
       properties:
         id:
           type: string
@@ -147,10 +170,15 @@ components:
         created_at:
           type: string
           format: date-time
-
     ChatMessage:
       type: object
-      required: [id, stream_id, user_id, user_name, body, created_at]
+      required:
+        - id
+        - stream_id
+        - user_id
+        - user_name
+        - body
+        - created_at
       properties:
         id:
           type: string
@@ -167,10 +195,16 @@ components:
         created_at:
           type: string
           format: date-time
-
     LiveStream:
       type: object
-      required: [id, user_id, stream_key_id, title, status, record_vod, created_at]
+      required:
+        - id
+        - user_id
+        - stream_key_id
+        - title
+        - status
+        - record_vod
+        - created_at
       properties:
         id:
           type: string
@@ -182,7 +216,10 @@ components:
           type: string
         status:
           type: string
-          enum: [waiting, live, ended]
+          enum:
+            - waiting
+            - live
+            - ended
         record_vod:
           type: boolean
         source_width:
@@ -206,10 +243,14 @@ components:
         created_at:
           type: string
           format: date-time
-
     StreamKey:
       type: object
-      required: [id, user_label, is_active, record_vod, created_at]
+      required:
+        - id
+        - user_label
+        - is_active
+        - record_vod
+        - created_at
       properties:
         id:
           type: string
@@ -222,10 +263,12 @@ components:
         created_at:
           type: string
           format: date-time
-
     PlaybackSession:
       type: object
-      required: [session_id, manifest_url, token]
+      required:
+        - session_id
+        - manifest_url
+        - token
       properties:
         session_id:
           type: string
@@ -235,14 +278,22 @@ components:
           type: string
         telemetry_url:
           type: string
-
     PlaybackEvent:
       type: object
-      required: [event_type]
+      required:
+        - event_type
       properties:
         event_type:
           type: string
-          enum: [playback_start, playback_end, heartbeat, rebuffer_start, rebuffer_end, quality_change, segment_downloaded, playback_error]
+          enum:
+            - playback_start
+            - playback_end
+            - heartbeat
+            - rebuffer_start
+            - rebuffer_end
+            - quality_change
+            - segment_downloaded
+            - playback_error
         timestamp:
           type: string
           format: date-time
@@ -276,10 +327,12 @@ components:
           type: string
         error_message:
           type: string
-
     UploadInitRequest:
       type: object
-      required: [title, total_chunks, file_size]
+      required:
+        - title
+        - total_chunks
+        - file_size
       properties:
         title:
           type: string
@@ -292,31 +345,336 @@ components:
           type: integer
           format: int64
           minimum: 1
-
     UploadInitResponse:
       type: object
-      required: [upload_id, total_chunks]
+      required:
+        - upload_id
+        - total_chunks
       properties:
         upload_id:
           type: string
         total_chunks:
           type: integer
-
     UploadProgress:
       type: object
-      required: [received, total]
+      required:
+        - received
+        - total
       properties:
         received:
           type: integer
         total:
           type: integer
-
+    ResponseUser:
+      type: object
+      required:
+        - id
+        - email
+        - upload_quota_bytes
+        - used_bytes
+        - created_at
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        picture:
+          type: string
+          format: uri
+        upload_quota_bytes:
+          type: integer
+          format: int64
+        used_bytes:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+    ResponseComment:
+      type: object
+      required:
+        - id
+        - video_id
+        - user_id
+        - user_name
+        - body
+        - created_at
+      properties:
+        id:
+          type: string
+        video_id:
+          type: string
+        user_id:
+          type: string
+        user_name:
+          type: string
+        user_picture:
+          type: string
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    ResponseChatMessage:
+      type: object
+      required:
+        - id
+        - stream_id
+        - user_id
+        - user_name
+        - body
+        - created_at
+      properties:
+        id:
+          type: string
+        stream_id:
+          type: string
+        user_id:
+          type: string
+        user_name:
+          type: string
+        user_picture:
+          type: string
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    ResponseLiveStream:
+      type: object
+      required:
+        - id
+        - user_id
+        - stream_key_id
+        - title
+        - status
+        - record_vod
+        - created_at
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        stream_key_id:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+          enum:
+            - waiting
+            - live
+            - ended
+        record_vod:
+          type: boolean
+        source_width:
+          type: integer
+        source_height:
+          type: integer
+        source_codec:
+          type: string
+        source_fps:
+          type: string
+        hls_path:
+          type: string
+        video_id:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    ResponseStreamKey:
+      type: object
+      required:
+        - id
+        - user_label
+        - is_active
+        - record_vod
+        - created_at
+      properties:
+        id:
+          type: string
+        user_label:
+          type: string
+        is_active:
+          type: boolean
+        record_vod:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    ResponsePlaybackSession:
+      type: object
+      required:
+        - session_id
+        - manifest_url
+        - token
+      properties:
+        session_id:
+          type: string
+        manifest_url:
+          type: string
+        token:
+          type: string
+        telemetry_url:
+          type: string
+    VideoStatusEnum:
+      type: string
+      enum:
+        - uploading
+        - processing
+        - ready
+        - failed
+    ResponseVideo:
+      type: object
+      required:
+        - id
+        - title
+        - visibility
+        - status
+        - play_count
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        uploader_name:
+          type: string
+        uploader_picture:
+          type: string
+        title:
+          type: string
+        visibility:
+          type: string
+          enum:
+            - private
+            - unlisted
+            - public
+        status:
+          $ref: '#/components/schemas/VideoStatusEnum'
+        width:
+          type: integer
+        height:
+          type: integer
+        duration:
+          type: string
+        codec:
+          type: string
+        hls_path:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        thumbnail_path:
+          type: string
+        play_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ResponseTranscodeJob:
+      type: object
+      required:
+        - id
+        - video_id
+        - status
+        - progress
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        video_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - completed
+            - failed
+        stage:
+          type: string
+        progress:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ResponseVideoStatus:
+      type: object
+      required:
+        - video
+      properties:
+        video:
+          $ref: '#/components/schemas/ResponseVideo'
+        job:
+          $ref: '#/components/schemas/ResponseTranscodeJob'
+    ResponseUploadInit:
+      type: object
+      required:
+        - upload_id
+        - total_chunks
+      properties:
+        upload_id:
+          type: string
+        total_chunks:
+          type: integer
+    ResponseUploadProgress:
+      type: object
+      required:
+        - received
+        - total
+      properties:
+        received:
+          type: integer
+        total:
+          type: integer
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: Page number (1-based)
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Number of items per page
 paths:
   /health:
     get:
       operationId: GetHealth
       summary: Liveness probe
-      tags: [health]
+      tags:
+        - health
       responses:
         '200':
           description: Server is alive
@@ -329,12 +687,12 @@ paths:
                     type: string
                   uptime_seconds:
                     type: number
-
   /health/ready:
     get:
       operationId: GetHealthReady
       summary: Readiness probe
-      tags: [health]
+      tags:
+        - health
       responses:
         '200':
           description: Server is ready
@@ -355,12 +713,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
   /api/v1/me:
     get:
       operationId: GetMe
       summary: Get current authenticated user
-      tags: [auth]
+      tags:
+        - auth
       security:
         - CookieAuth: []
       responses:
@@ -369,42 +727,31 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/ResponseUser'
         '401':
           description: Not authenticated
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
   /auth/logout:
     post:
       operationId: Logout
       summary: Log out current user
-      tags: [auth]
+      tags:
+        - auth
       responses:
         '204':
           description: Logged out successfully
-
   /api/v1/videos:
     get:
       operationId: ListVideos
       summary: List videos
-      tags: [videos]
+      tags:
+        - videos
       parameters:
-        - name: page
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            default: 1
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 20
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
           description: List of videos
@@ -413,13 +760,13 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Video'
-
-  /api/v1/videos/{id}:
+                  $ref: '#/components/schemas/ResponseVideo'
+  '/api/v1/videos/{id}':
     get:
       operationId: GetVideo
       summary: Get a video by ID
-      tags: [videos]
+      tags:
+        - videos
       parameters:
         - name: id
           in: path
@@ -432,7 +779,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Video'
+                $ref: '#/components/schemas/ResponseVideo'
         '404':
           description: Video not found
           content:
@@ -442,7 +789,8 @@ paths:
     delete:
       operationId: DeleteVideo
       summary: Delete a video
-      tags: [videos]
+      tags:
+        - videos
       security:
         - CookieAuth: []
       parameters:
@@ -461,7 +809,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          description: Not found
+          description: Video not found
           content:
             application/json:
               schema:
@@ -469,7 +817,8 @@ paths:
     patch:
       operationId: UpdateVideo
       summary: Update video properties
-      tags: [videos]
+      tags:
+        - videos
       security:
         - CookieAuth: []
       parameters:
@@ -487,7 +836,10 @@ paths:
               properties:
                 visibility:
                   type: string
-                  enum: [private, unlisted, public]
+                  enum:
+                    - private
+                    - unlisted
+                    - public
       responses:
         '204':
           description: Video updated
@@ -503,12 +855,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/videos/{id}/status:
+  '/api/v1/videos/{id}/status':
     get:
       operationId: GetVideoStatus
       summary: Get video transcode status
-      tags: [videos]
+      tags:
+        - videos
       parameters:
         - name: id
           in: path
@@ -517,23 +869,23 @@ paths:
             type: string
       responses:
         '200':
-          description: Video status
+          description: Video status with optional transcode job
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VideoStatus'
+                $ref: '#/components/schemas/ResponseVideoStatus'
         '404':
-          description: Not found
+          description: Video not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/videos/{id}/sessions:
+  '/api/v1/videos/{id}/sessions':
     post:
       operationId: CreateVideoSession
       summary: Create a playback session for a video
-      tags: [sessions]
+      tags:
+        - sessions
       parameters:
         - name: id
           in: path
@@ -546,19 +898,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlaybackSession'
+                $ref: '#/components/schemas/ResponsePlaybackSession'
         '404':
-          description: Not found
+          description: Video not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
   /api/v1/uploads:
     post:
       operationId: InitUpload
       summary: Initialize a chunked video upload
-      tags: [uploads]
+      tags:
+        - uploads
       security:
         - CookieAuth: []
       requestBody:
@@ -573,7 +925,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UploadInitResponse'
+                $ref: '#/components/schemas/ResponseUploadInit'
         '400':
           description: Invalid request
           content:
@@ -592,12 +944,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/uploads/{upload_id}/thumbnail:
+  '/api/v1/uploads/{upload_id}/thumbnail':
     post:
       operationId: UploadThumbnail
-      summary: Upload a thumbnail image
-      tags: [uploads]
+      summary: Upload a thumbnail image for a video
+      tags:
+        - uploads
       security:
         - CookieAuth: []
       parameters:
@@ -612,7 +964,8 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [thumbnail]
+              required:
+                - thumbnail
               properties:
                 thumbnail:
                   type: string
@@ -632,12 +985,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/uploads/{upload_id}/chunks/{chunk_number}:
+  '/api/v1/uploads/{upload_id}/chunks/{chunk_number}':
     put:
       operationId: ReceiveChunk
       summary: Upload a single chunk
-      tags: [uploads]
+      tags:
+        - uploads
       security:
         - CookieAuth: []
       parameters:
@@ -674,12 +1027,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/uploads/{upload_id}/status:
+  '/api/v1/uploads/{upload_id}/status':
     get:
       operationId: GetUploadStatus
       summary: Get upload progress
-      tags: [uploads]
+      tags:
+        - uploads
       security:
         - CookieAuth: []
       parameters:
@@ -694,32 +1047,26 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UploadProgress'
+                $ref: '#/components/schemas/ResponseUploadProgress'
         '404':
-          description: Not found
+          description: Upload not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/videos/{video_id}/comments:
+  '/api/v1/videos/{video_id}/comments':
     get:
       operationId: ListComments
       summary: List comments for a video
-      tags: [comments]
+      tags:
+        - comments
       parameters:
         - name: video_id
           in: path
           required: true
           schema:
             type: string
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 20
+        - $ref: '#/components/parameters/LimitParam'
         - name: offset
           in: query
           schema:
@@ -734,11 +1081,12 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Comment'
+                  $ref: '#/components/schemas/ResponseComment'
     post:
       operationId: AddComment
       summary: Add a comment to a video
-      tags: [comments]
+      tags:
+        - comments
       security:
         - CookieAuth: []
       parameters:
@@ -753,7 +1101,8 @@ paths:
           application/json:
             schema:
               type: object
-              required: [body]
+              required:
+                - body
               properties:
                 body:
                   type: string
@@ -765,7 +1114,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Comment'
+                $ref: '#/components/schemas/ResponseComment'
         '400':
           description: Invalid request
           content:
@@ -778,12 +1127,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/videos/{video_id}/comments/{comment_id}:
+  '/api/v1/videos/{video_id}/comments/{comment_id}':
     delete:
       operationId: DeleteComment
       summary: Delete a comment
-      tags: [comments]
+      tags:
+        - comments
       security:
         - CookieAuth: []
       parameters:
@@ -807,17 +1156,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          description: Not found
+          description: Comment not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
   /api/v1/live:
     get:
       operationId: ListLiveStreams
       summary: List active live streams
-      tags: [live]
+      tags:
+        - live
       responses:
         '200':
           description: List of live streams
@@ -826,13 +1175,13 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/LiveStream'
-
-  /api/v1/live/{stream_id}:
+                  $ref: '#/components/schemas/ResponseLiveStream'
+  '/api/v1/live/{stream_id}':
     get:
       operationId: GetLiveStream
       summary: Get a live stream by ID
-      tags: [live]
+      tags:
+        - live
       parameters:
         - name: stream_id
           in: path
@@ -845,19 +1194,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LiveStream'
+                $ref: '#/components/schemas/ResponseLiveStream'
         '404':
-          description: Not found
+          description: Stream not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/live/{stream_id}/viewers:
+  '/api/v1/live/{stream_id}/viewers':
     get:
       operationId: GetLiveViewers
-      summary: Get viewer count for a live stream
-      tags: [live]
+      summary: Get active viewer count for a live stream
+      tags:
+        - live
       parameters:
         - name: stream_id
           in: path
@@ -871,16 +1220,18 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [count]
+                required:
+                  - count
                 properties:
                   count:
                     type: integer
-
-  /api/v1/live/{stream_id}/sessions:
+  '/api/v1/live/{stream_id}/sessions':
     post:
       operationId: CreateLiveSession
       summary: Create a playback session for a live stream
-      tags: [live, sessions]
+      tags:
+        - live
+        - sessions
       parameters:
         - name: stream_id
           in: path
@@ -893,19 +1244,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlaybackSession'
+                $ref: '#/components/schemas/ResponsePlaybackSession'
         '404':
-          description: Not found
+          description: Stream not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/live/{stream_id}/end:
+  '/api/v1/live/{stream_id}/end':
     post:
       operationId: EndLiveStream
       summary: End a live stream
-      tags: [live]
+      tags:
+        - live
       security:
         - CookieAuth: []
       parameters:
@@ -924,30 +1275,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          description: Not found
+          description: Stream not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/live/{stream_id}/chat:
+  '/api/v1/live/{stream_id}/chat':
     get:
       operationId: ListChatMessages
       summary: List chat messages for a live stream
-      tags: [chat]
+      tags:
+        - chat
       parameters:
         - name: stream_id
           in: path
           required: true
           schema:
             type: string
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
+        - $ref: '#/components/parameters/LimitParam'
         - name: offset
           in: query
           schema:
@@ -962,11 +1307,12 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/ChatMessage'
+                  $ref: '#/components/schemas/ResponseChatMessage'
     post:
       operationId: SendChatMessage
-      summary: Send a chat message
-      tags: [chat]
+      summary: Send a chat message to a live stream
+      tags:
+        - chat
       security:
         - CookieAuth: []
       parameters:
@@ -981,7 +1327,8 @@ paths:
           application/json:
             schema:
               type: object
-              required: [body]
+              required:
+                - body
               properties:
                 body:
                   type: string
@@ -993,7 +1340,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatMessage'
+                $ref: '#/components/schemas/ResponseChatMessage'
         '400':
           description: Invalid request
           content:
@@ -1006,12 +1353,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/live/{stream_id}/chat/stream:
+  '/api/v1/live/{stream_id}/chat/stream':
     get:
       operationId: ChatStream
       summary: SSE stream of live chat messages
-      tags: [chat]
+      tags:
+        - chat
       parameters:
         - name: stream_id
           in: path
@@ -1020,17 +1367,17 @@ paths:
             type: string
       responses:
         '200':
-          description: Server-sent event stream
+          description: Server-sent event stream of chat messages
           content:
             text/event-stream:
               schema:
                 type: string
-
   /api/v1/stream-keys:
     get:
       operationId: ListStreamKeys
-      summary: List stream keys for the current user
-      tags: [stream-keys]
+      summary: List active stream keys for the current user
+      tags:
+        - stream-keys
       security:
         - CookieAuth: []
       responses:
@@ -1041,7 +1388,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/StreamKey'
+                  $ref: '#/components/schemas/ResponseStreamKey'
         '401':
           description: Unauthorized
           content:
@@ -1051,7 +1398,8 @@ paths:
     post:
       operationId: CreateStreamKey
       summary: Create a new stream key
-      tags: [stream-keys]
+      tags:
+        - stream-keys
       security:
         - CookieAuth: []
       requestBody:
@@ -1060,7 +1408,8 @@ paths:
           application/json:
             schema:
               type: object
-              required: [label]
+              required:
+                - label
               properties:
                 label:
                   type: string
@@ -1075,7 +1424,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StreamKey'
+                $ref: '#/components/schemas/ResponseStreamKey'
         '401':
           description: Unauthorized
           content:
@@ -1083,17 +1432,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '403':
-          description: Forbidden
+          description: Forbidden (not on Go Live whitelist)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/stream-keys/{id}:
+  '/api/v1/stream-keys/{id}':
     delete:
       operationId: DeactivateStreamKey
       summary: Deactivate a stream key
-      tags: [stream-keys]
+      tags:
+        - stream-keys
       security:
         - CookieAuth: []
       parameters:
@@ -1104,7 +1453,7 @@ paths:
             type: string
       responses:
         '204':
-          description: Deactivated
+          description: Stream key deactivated
         '401':
           description: Unauthorized
           content:
@@ -1112,7 +1461,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          description: Not found
+          description: Stream key not found
           content:
             application/json:
               schema:
@@ -1120,7 +1469,8 @@ paths:
     patch:
       operationId: UpdateStreamKey
       summary: Update a stream key
-      tags: [stream-keys]
+      tags:
+        - stream-keys
       security:
         - CookieAuth: []
       parameters:
@@ -1140,19 +1490,19 @@ paths:
                   type: boolean
       responses:
         '204':
-          description: Updated
+          description: Stream key updated
         '401':
           description: Unauthorized
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-
-  /api/v1/sessions/{session_id}/events:
+  '/api/v1/sessions/{session_id}/events':
     post:
       operationId: PostTelemetryEvents
       summary: Submit batch playback telemetry events
-      tags: [telemetry]
+      tags:
+        - telemetry
       parameters:
         - name: session_id
           in: path
@@ -1165,7 +1515,8 @@ paths:
           application/json:
             schema:
               type: object
-              required: [events]
+              required:
+                - events
               properties:
                 events:
                   type: array
@@ -1179,7 +1530,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [received]
+                required:
+                  - received
                 properties:
                   received:
                     type: integer

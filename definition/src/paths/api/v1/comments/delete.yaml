@@ -23,10 +23,10 @@ delete:
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/Error.yaml'
+            $ref: '../../../../components/schemas/Error.yaml'
     '404':
       description: Comment not found
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/Error.yaml'
+            $ref: '../../../../components/schemas/Error.yaml'

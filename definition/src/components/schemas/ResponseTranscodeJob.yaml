@@ -1,0 +1,31 @@
+type: object
+required:
+  - id
+  - video_id
+  - status
+  - progress
+  - created_at
+  - updated_at
+properties:
+  id:
+    type: string
+  video_id:
+    type: string
+  status:
+    type: string
+    enum: [queued, running, completed, failed]
+  stage:
+    type: string
+  progress:
+    type: number
+    format: float
+    minimum: 0
+    maximum: 1
+  error:
+    type: string
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time

@@ -1,0 +1,19 @@
+type: object
+required:
+  - id
+  - user_label
+  - is_active
+  - record_vod
+  - created_at
+properties:
+  id:
+    type: string
+  user_label:
+    type: string
+  is_active:
+    type: boolean
+  record_vod:
+    type: boolean
+  created_at:
+    type: string
+    format: date-time

@@ -1,0 +1,48 @@
+type: object
+required:
+  - id
+  - title
+  - visibility
+  - status
+  - play_count
+  - created_at
+  - updated_at
+properties:
+  id:
+    type: string
+  user_id:
+    type: string
+  uploader_name:
+    type: string
+  uploader_picture:
+    type: string
+  title:
+    type: string
+  visibility:
+    type: string
+    enum: [private, unlisted, public]
+  status:
+    $ref: './VideoStatusEnum.yaml'
+  width:
+    type: integer
+  height:
+    type: integer
+  duration:
+    type: string
+  codec:
+    type: string
+  hls_path:
+    type: string
+  size_bytes:
+    type: integer
+    format: int64
+  thumbnail_path:
+    type: string
+  play_count:
+    type: integer
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time

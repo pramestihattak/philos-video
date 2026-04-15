@@ -19,8 +19,6 @@ components:
       $ref: './components/schemas/User.yaml'
     Video:
       $ref: './components/schemas/Video.yaml'
-    VideoStatus:
-      $ref: './components/schemas/VideoStatus.yaml'
     TranscodeJob:
       $ref: './components/schemas/TranscodeJob.yaml'
     Comment:
@@ -41,6 +39,30 @@ components:
       $ref: './components/schemas/UploadInitResponse.yaml'
     UploadProgress:
       $ref: './components/schemas/UploadProgress.yaml'
+    ResponseUser:
+      $ref: './components/schemas/ResponseUser.yaml'
+    ResponseComment:
+      $ref: './components/schemas/ResponseComment.yaml'
+    ResponseChatMessage:
+      $ref: './components/schemas/ResponseChatMessage.yaml'
+    ResponseLiveStream:
+      $ref: './components/schemas/ResponseLiveStream.yaml'
+    ResponseStreamKey:
+      $ref: './components/schemas/ResponseStreamKey.yaml'
+    ResponsePlaybackSession:
+      $ref: './components/schemas/ResponsePlaybackSession.yaml'
+    VideoStatusEnum:
+      $ref: './components/schemas/VideoStatusEnum.yaml'
+    ResponseVideo:
+      $ref: './components/schemas/ResponseVideo.yaml'
+    ResponseTranscodeJob:
+      $ref: './components/schemas/ResponseTranscodeJob.yaml'
+    ResponseVideoStatus:
+      $ref: './components/schemas/ResponseVideoStatus.yaml'
+    ResponseUploadInit:
+      $ref: './components/schemas/ResponseUploadInit.yaml'
+    ResponseUploadProgress:
+      $ref: './components/schemas/ResponseUploadProgress.yaml'
   parameters:
     PageParam:
       $ref: './components/parameters/PageParam.yaml'
@@ -52,26 +74,18 @@ paths:
     $ref: './paths/api/v1/health/liveness.yaml'
   /health/ready:
     $ref: './paths/api/v1/health/readiness.yaml'
-
   /api/v1/me:
     $ref: './paths/api/v1/auth/me.yaml'
   /auth/logout:
     $ref: './paths/api/v1/auth/logout.yaml'
-
   /api/v1/videos:
     $ref: './paths/api/v1/videos/list.yaml'
   /api/v1/videos/{id}:
-    get:
-      $ref: './paths/api/v1/videos/get.yaml#/get'
-    delete:
-      $ref: './paths/api/v1/videos/delete.yaml#/delete'
-    patch:
-      $ref: './paths/api/v1/videos/update.yaml#/patch'
+    $ref: './paths/api/v1/videos/detail.yaml'
   /api/v1/videos/{id}/status:
     $ref: './paths/api/v1/videos/status.yaml'
   /api/v1/videos/{id}/sessions:
     $ref: './paths/api/v1/videos/create-session.yaml'
-
   /api/v1/uploads:
     $ref: './paths/api/v1/uploads/init.yaml'
   /api/v1/uploads/{upload_id}/thumbnail:
@@ -80,15 +94,10 @@ paths:
     $ref: './paths/api/v1/uploads/chunk.yaml'
   /api/v1/uploads/{upload_id}/status:
     $ref: './paths/api/v1/uploads/status.yaml'
-
   /api/v1/videos/{video_id}/comments:
-    get:
-      $ref: './paths/api/v1/comments/list.yaml#/get'
-    post:
-      $ref: './paths/api/v1/comments/add.yaml#/post'
+    $ref: './paths/api/v1/comments/collection.yaml'
   /api/v1/videos/{video_id}/comments/{comment_id}:
     $ref: './paths/api/v1/comments/delete.yaml'
-
   /api/v1/live:
     $ref: './paths/api/v1/live/list.yaml'
   /api/v1/live/{stream_id}:
@@ -99,25 +108,13 @@ paths:
     $ref: './paths/api/v1/live/create-session.yaml'
   /api/v1/live/{stream_id}/end:
     $ref: './paths/api/v1/live/end.yaml'
-
   /api/v1/live/{stream_id}/chat:
-    get:
-      $ref: './paths/api/v1/chat/list.yaml#/get'
-    post:
-      $ref: './paths/api/v1/chat/send.yaml#/post'
+    $ref: './paths/api/v1/chat/collection.yaml'
   /api/v1/live/{stream_id}/chat/stream:
     $ref: './paths/api/v1/chat/stream.yaml'
-
   /api/v1/stream-keys:
-    get:
-      $ref: './paths/api/v1/stream-keys/list.yaml#/get'
-    post:
-      $ref: './paths/api/v1/stream-keys/create.yaml#/post'
+    $ref: './paths/api/v1/stream-keys/collection.yaml'
   /api/v1/stream-keys/{id}:
-    delete:
-      $ref: './paths/api/v1/stream-keys/deactivate.yaml#/delete'
-    patch:
-      $ref: './paths/api/v1/stream-keys/update.yaml#/patch'
-
+    $ref: './paths/api/v1/stream-keys/detail.yaml'
   /api/v1/sessions/{session_id}/events:
     $ref: './paths/api/v1/telemetry/events.yaml'

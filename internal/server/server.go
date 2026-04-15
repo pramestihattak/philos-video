@@ -4,27 +4,37 @@ import (
 	"philos-video/internal/health"
 	"philos-video/internal/live"
 	"philos-video/internal/middleware"
-	"philos-video/internal/service"
-	"philos-video/internal/storage"
+	"philos-video/internal/service/chat"
+	"philos-video/internal/service/comment"
+	"philos-video/internal/service/oauth"
+	"philos-video/internal/service/session"
+	"philos-video/internal/service/upload"
+	"philos-video/internal/service/usersession"
+	"philos-video/internal/service/video"
+	eventrepo "philos-video/internal/storage/event"
+	sessionrepo "philos-video/internal/storage/session"
+	streamkeyrepo "philos-video/internal/storage/streamkey"
+	userrepo "philos-video/internal/storage/user"
+	videorepo "philos-video/internal/storage/video"
 )
 
 // Server implements api.ServerInterface. It holds all application dependencies.
 type Server struct {
 	// services
-	videoSvc       service.VideoServicer
-	uploadSvc      service.UploadServicer
-	sessionSvc     service.SessionServicer
-	commentSvc     service.CommentServicer
-	chatHub        service.ChatHubber
-	oauthSvc       service.OAuthServicer
-	userSessionSvc service.UserSessionServicer
+	videoSvc       video.Servicer
+	uploadSvc      upload.Servicer
+	sessionSvc     session.Servicer
+	commentSvc     comment.Servicer
+	chatHub        chat.Hubber
+	oauthSvc       oauth.Servicer
+	userSessionSvc usersession.Servicer
 
 	// storage accessed directly by handlers
-	streamKeyRepo storage.StreamKeyStorer
-	sessionRepo   storage.SessionStorer
-	eventRepo     storage.EventStorer
-	userRepo      storage.UserStorer
-	videoRepo     storage.VideoStorer
+	streamKeyRepo streamkeyrepo.Repository
+	sessionRepo   sessionrepo.Repository
+	eventRepo     eventrepo.Repository
+	userRepo      userrepo.Repository
+	videoRepo     videorepo.Repository
 
 	// live manager
 	liveMgr *live.Manager
@@ -43,19 +53,19 @@ type Server struct {
 
 // Params holds constructor arguments for Server.
 type Params struct {
-	VideoSvc       service.VideoServicer
-	UploadSvc      service.UploadServicer
-	SessionSvc     service.SessionServicer
-	CommentSvc     service.CommentServicer
-	ChatHub        service.ChatHubber
-	OAuthSvc       service.OAuthServicer
-	UserSessionSvc service.UserSessionServicer
+	VideoSvc       video.Servicer
+	UploadSvc      upload.Servicer
+	SessionSvc     session.Servicer
+	CommentSvc     comment.Servicer
+	ChatHub        chat.Hubber
+	OAuthSvc       oauth.Servicer
+	UserSessionSvc usersession.Servicer
 
-	StreamKeyRepo storage.StreamKeyStorer
-	SessionRepo   storage.SessionStorer
-	EventRepo     storage.EventStorer
-	UserRepo      storage.UserStorer
-	VideoRepo     storage.VideoStorer
+	StreamKeyRepo streamkeyrepo.Repository
+	SessionRepo   sessionrepo.Repository
+	EventRepo     eventrepo.Repository
+	UserRepo      userrepo.Repository
+	VideoRepo     videorepo.Repository
 
 	LiveMgr       *live.Manager
 	HealthChecker *health.HealthChecker

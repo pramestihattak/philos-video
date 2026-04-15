@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"philos-video/internal/metrics"
-	"philos-video/internal/service"
+	"philos-video/internal/service/session"
 )
 
 // tokenParser is the minimal interface required to validate a JWT playback token.
 type tokenParser interface {
-	ParseToken(tokenStr string) (*service.PlaybackClaims, error)
+	ParseToken(tokenStr string) (*session.PlaybackClaims, error)
 }
 
 // sessionToucher is the minimal interface required to update a session's last-active time.
@@ -110,8 +110,8 @@ func (m *AuthMiddleware) RequireLiveToken(next http.Handler) http.Handler {
 }
 
 // ClaimsFromContext retrieves playback claims from the request context.
-func ClaimsFromContext(ctx context.Context) *service.PlaybackClaims {
-	v, _ := ctx.Value(claimsKey{}).(*service.PlaybackClaims)
+func ClaimsFromContext(ctx context.Context) *session.PlaybackClaims {
+	v, _ := ctx.Value(claimsKey{}).(*session.PlaybackClaims)
 	return v
 }
 

@@ -1,0 +1,89 @@
+get:
+  operationId: GetVideo
+  summary: Get a video by ID
+  tags: [videos]
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '200':
+      description: Video details
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/ResponseVideo.yaml'
+    '404':
+      description: Video not found
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'
+
+delete:
+  operationId: DeleteVideo
+  summary: Delete a video
+  tags: [videos]
+  security:
+    - CookieAuth: []
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    '204':
+      description: Video deleted
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'
+    '404':
+      description: Video not found
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'
+
+patch:
+  operationId: UpdateVideo
+  summary: Update video properties
+  tags: [videos]
+  security:
+    - CookieAuth: []
+  parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          properties:
+            visibility:
+              type: string
+              enum: [private, unlisted, public]
+  responses:
+    '204':
+      description: Video updated
+    '400':
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'

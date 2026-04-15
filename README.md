@@ -70,8 +70,8 @@ PostgreSQL 15 (:5433)
 | Layer | Package | Purpose |
 |-------|---------|---------|
 | Entry point | `cmd/server` | Wire config → DB → repos → services → chi router |
-| API handlers | `internal/server` | Implements `api.ServerInterface` (one file per domain) |
-| Generated API | `internal/api` | Types, `ServerInterface`, `HandlerFromMux` (do not edit) |
+| API handlers | `internal/server` | Implements `api.ServerInterface` (one file per handler method) |
+| Generated API | `gen/api` | Types, `ServerInterface`, `HandlerFromMux` (do not edit) |
 | Services | `internal/service` | Business logic (no HTTP, no SQL) |
 | Repositories | `internal/repository` | SQL queries |
 | Live streaming | `internal/live` | RTMP server + per-stream FFmpeg sessions |
@@ -111,8 +111,9 @@ PostgreSQL 15 (:5433)
 | `make serve` | Run HTTP + RTMP server |
 | `make dev` | Live-reload dev server (uses `air` if available) |
 | `make build` | Compile binaries to `bin/` |
-| `make spec-validate` | Validate `definition/api.yaml` |
-| `make spec-generate` | Regenerate `internal/api/api.gen.go` from spec |
+| `make spec-validate` | Bundle `definition/src/` and validate `api.yaml` |
+| `make spec-generate` | Bundle spec + regenerate `gen/api/api.gen.go` |
+| `make spec-docs` | Serve Swagger UI at `http://localhost:8081` |
 | `make clean` | Remove `bin/` and `data/` |
 
 ---

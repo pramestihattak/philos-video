@@ -1,0 +1,63 @@
+get:
+  operationId: ListStreamKeys
+  summary: List active stream keys for the current user
+  tags: [stream-keys]
+  security:
+    - CookieAuth: []
+  responses:
+    '200':
+      description: List of stream keys
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: '../../../../components/schemas/ResponseStreamKey.yaml'
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'
+
+post:
+  operationId: CreateStreamKey
+  summary: Create a new stream key
+  tags: [stream-keys]
+  security:
+    - CookieAuth: []
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required:
+            - label
+          properties:
+            label:
+              type: string
+              minLength: 1
+              maxLength: 100
+            record_vod:
+              type: boolean
+              default: true
+  responses:
+    '201':
+      description: Stream key created
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/ResponseStreamKey.yaml'
+    '401':
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'
+    '403':
+      description: Forbidden (not on Go Live whitelist)
+      content:
+        application/json:
+          schema:
+            $ref: '../../../../components/schemas/Error.yaml'

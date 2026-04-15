@@ -10,4 +10,4 @@ get:
           schema:
             type: array
             items:
-              $ref: '../../../components/schemas/LiveStream.yaml'
+              $ref: '../../../../components/schemas/ResponseLiveStream.yaml'

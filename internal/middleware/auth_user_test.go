@@ -8,7 +8,7 @@ import (
 
 	"philos-video/internal/middleware"
 	"philos-video/internal/models"
-	"philos-video/internal/service"
+	"philos-video/internal/service/usersession"
 )
 
 // stubUserRepo implements the userLookup interface (GetByID) for tests.
@@ -25,7 +25,7 @@ func (r *stubUserRepo) GetByID(_ context.Context, id string) (*models.User, erro
 
 func makeAuthMW(t *testing.T, user *models.User) (*middleware.UserAuthMiddleware, string) {
 	t.Helper()
-	svc, err := service.NewUserSessionService("test-secret-key-must-be-32-chars-ok", false)
+	svc, err := usersession.New("test-secret-key-must-be-32-chars-ok", false)
 	if err != nil {
 		t.Fatalf("NewUserSessionService: %v", err)
 	}

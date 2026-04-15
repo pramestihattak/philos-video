@@ -17,7 +17,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"philos-video/internal/api"
+	"philos-video/gen/api"
 	"philos-video/internal/config"
 	"philos-video/internal/database"
 	"philos-video/internal/health"
@@ -26,8 +26,24 @@ import (
 	"philos-video/internal/metrics"
 	"philos-video/internal/middleware"
 	"philos-video/internal/server"
-	"philos-video/internal/storage"
-	"philos-video/internal/service"
+	"philos-video/internal/service/chat"
+	"philos-video/internal/service/comment"
+	"philos-video/internal/service/oauth"
+	"philos-video/internal/service/session"
+	"philos-video/internal/service/transcode"
+	"philos-video/internal/service/upload"
+	"philos-video/internal/service/usersession"
+	"philos-video/internal/service/video"
+	chatrepo "philos-video/internal/storage/chat"
+	commentrepo "philos-video/internal/storage/comment"
+	eventrepo "philos-video/internal/storage/event"
+	jobrepo "philos-video/internal/storage/job"
+	livestreamrepo "philos-video/internal/storage/livestream"
+	sessionrepo "philos-video/internal/storage/session"
+	streamkeyrepo "philos-video/internal/storage/streamkey"
+	uploadrepo "philos-video/internal/storage/upload"
+	userrepo "philos-video/internal/storage/user"
+	videorepo "philos-video/internal/storage/video"
 	"philos-video/internal/watchdog"
 	"philos-video/internal/worker"
 )
@@ -68,26 +84,26 @@ func main() {
 	}
 
 	// Storage
-	userRepo := storage.NewUserRepo(db)
-	videoRepo := storage.NewVideoRepo(db)
-	uploadRepo := storage.NewUploadRepo(db)
-	jobRepo := storage.NewJobRepo(db)
-	sessionRepo := storage.NewSessionRepo(db)
-	eventRepo := storage.NewEventRepo(db)
-	streamKeyRepo := storage.NewStreamKeyRepo(db)
-	liveStreamRepo := storage.NewLiveStreamRepo(db)
-	commentRepo := storage.NewCommentRepo(db)
-	chatMsgRepo := storage.NewChatMessageRepo(db)
+	userRepo := userrepo.New(db)
+	videoRepo := videorepo.New(db)
+	uploadRepo := uploadrepo.New(db)
+	jobRepo := jobrepo.New(db)
+	sessionRepo := sessionrepo.New(db)
+	eventRepo := eventrepo.New(db)
+	streamKeyRepo := streamkeyrepo.New(db)
+	liveStreamRepo := livestreamrepo.New(db)
+	commentRepo := commentrepo.New(db)
+	chatMsgRepo := chatrepo.New(db)
 
 	// Comments + live chat
-	commentSvc := service.NewCommentService(commentRepo, videoRepo)
-	chatHub := service.NewChatHub(chatMsgRepo)
+	commentSvc := comment.New(commentRepo, videoRepo)
+	chatHub := chat.New(chatMsgRepo)
 
 	// Job channel + transcode workers
 	jobCh := make(chan string, 100)
-	videoSvc := service.NewVideoService(videoRepo, jobRepo, userRepo, cfg.DataDir)
-	uploadSvc := service.NewUploadService(videoRepo, uploadRepo, jobRepo, userRepo, cfg.DataDir, jobCh)
-	transcodeSvc := service.NewTranscodeService(videoRepo, jobRepo, cfg.DataDir)
+	videoSvc := video.New(videoRepo, jobRepo, userRepo, cfg.DataDir)
+	uploadSvc := upload.New(videoRepo, uploadRepo, jobRepo, userRepo, cfg.DataDir, jobCh)
+	transcodeSvc := transcode.New(videoRepo, jobRepo, cfg.DataDir)
 
 	// Use a cancelable context for workers so they drain on shutdown.
 	workerCtx, workerCancel := context.WithCancel(context.Background())
@@ -105,7 +121,7 @@ func main() {
 	}
 
 	// Session service + HLS playback auth middleware
-	sessionSvc, err := service.NewSessionService(sessionRepo, videoRepo, cfg.JWTSecret, cfg.JWTExpiry)
+	sessionSvc, err := session.New(sessionRepo, videoRepo, cfg.JWTSecret, cfg.JWTExpiry)
 	if err != nil {
 		slog.Error("creating session service", "err", err)
 		os.Exit(1)
@@ -113,7 +129,7 @@ func main() {
 	authMiddleware := middleware.NewAuthMiddleware(sessionSvc, sessionRepo)
 
 	// User session service (browser cookie JWT)
-	userSessionSvc, err := service.NewUserSessionService(cfg.SessionCookieSecret, cfg.SessionCookieSecure)
+	userSessionSvc, err := usersession.New(cfg.SessionCookieSecret, cfg.SessionCookieSecure)
 	if err != nil {
 		slog.Error("creating user session service", "err", err)
 		os.Exit(1)
@@ -121,7 +137,7 @@ func main() {
 	userAuthMW := middleware.NewUserAuthMiddleware(userSessionSvc, userRepo)
 
 	// OAuth service
-	oauthSvc := service.NewOAuthService(cfg)
+	oauthSvc := oauth.New(cfg)
 
 	// Live stream manager + RTMP server
 	liveMgr := live.NewManager(streamKeyRepo, liveStreamRepo, videoRepo, cfg.DataDir)

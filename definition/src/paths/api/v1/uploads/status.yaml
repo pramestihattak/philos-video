@@ -16,10 +16,10 @@ get:
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/UploadProgress.yaml'
+            $ref: '../../../../components/schemas/ResponseUploadProgress.yaml'
     '404':
       description: Upload not found
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/Error.yaml'
+            $ref: '../../../../components/schemas/Error.yaml'

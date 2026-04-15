@@ -14,19 +14,19 @@ import (
 
 	"philos-video/internal/live"
 	"philos-video/internal/metrics"
-	"philos-video/internal/storage"
+	jobrepo "philos-video/internal/storage/job"
 )
 
 // Watchdog monitors FFmpeg processes and stuck transcode jobs.
 type Watchdog struct {
 	liveMgr       *live.Manager
-	jobRepo       storage.JobStorer
+	jobRepo       jobrepo.Repository
 	dataDir       string
 	checkInterval time.Duration
 }
 
 // New creates a Watchdog.
-func New(liveMgr *live.Manager, jobRepo storage.JobStorer, dataDir string) *Watchdog {
+func New(liveMgr *live.Manager, jobRepo jobrepo.Repository, dataDir string) *Watchdog {
 	return &Watchdog{
 		liveMgr:       liveMgr,
 		jobRepo:       jobRepo,

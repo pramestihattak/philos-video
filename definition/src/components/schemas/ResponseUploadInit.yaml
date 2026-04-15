@@ -1,0 +1,9 @@
+type: object
+required:
+  - upload_id
+  - total_chunks
+properties:
+  upload_id:
+    type: string
+  total_chunks:
+    type: integer

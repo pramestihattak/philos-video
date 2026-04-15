@@ -9,29 +9,29 @@ post:
     content:
       application/json:
         schema:
-          $ref: '../../../components/schemas/UploadInitRequest.yaml'
+          $ref: '../../../../components/schemas/UploadInitRequest.yaml'
   responses:
     '201':
       description: Upload initialized
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/UploadInitResponse.yaml'
+            $ref: '../../../../components/schemas/ResponseUploadInit.yaml'
     '400':
       description: Invalid request
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/Error.yaml'
+            $ref: '../../../../components/schemas/Error.yaml'
     '401':
       description: Unauthorized
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/Error.yaml'
+            $ref: '../../../../components/schemas/Error.yaml'
     '413':
       description: Quota exceeded
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/Error.yaml'
+            $ref: '../../../../components/schemas/Error.yaml'

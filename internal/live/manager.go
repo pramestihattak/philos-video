@@ -12,15 +12,17 @@ import (
 
 	"philos-video/internal/metrics"
 	"philos-video/internal/models"
-	"philos-video/internal/storage"
+	livestreamrepo "philos-video/internal/storage/livestream"
+	streamkeyrepo "philos-video/internal/storage/streamkey"
+	videorepo "philos-video/internal/storage/video"
 )
 
 // Manager coordinates live stream lifecycle: stream key validation, FFmpeg
 // session management, viewer counting, and VOD conversion on stream end.
 type Manager struct {
-	streamKeyRepo  storage.StreamKeyStorer
-	liveStreamRepo storage.LiveStreamStorer
-	videoRepo      storage.VideoStorer
+	streamKeyRepo  streamkeyrepo.Repository
+	liveStreamRepo livestreamrepo.Repository
+	videoRepo      videorepo.Repository
 	dataDir        string
 
 	mu         sync.RWMutex
@@ -29,9 +31,9 @@ type Manager struct {
 }
 
 func NewManager(
-	streamKeyRepo storage.StreamKeyStorer,
-	liveStreamRepo storage.LiveStreamStorer,
-	videoRepo storage.VideoStorer,
+	streamKeyRepo streamkeyrepo.Repository,
+	liveStreamRepo livestreamrepo.Repository,
+	videoRepo videorepo.Repository,
 	dataDir string,
 ) *Manager {
 	return &Manager{

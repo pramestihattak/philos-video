@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"net/http"
 )
 
 // Sentinel errors returned by service methods. Handlers map these to HTTP status codes.
@@ -17,20 +16,18 @@ var (
 )
 
 // ValidationError wraps user-facing validation failures.
-// Handlers that receive this type may return its message as a 400 response;
-// all other errors should be treated as internal and return a generic 500.
+// Handlers check for this type via errors.As and return its message as a 400 response.
+// All other errors should be treated as internal and return a generic 500.
 type ValidationError struct{ msg string }
 
 func (e *ValidationError) Error() string { return e.msg }
 
-func validationErrorf(format string, args ...any) *ValidationError {
-	return &ValidationError{msg: fmt.Sprintf(format, args...)}
+// NewValidationError creates a ValidationError with the given message.
+func NewValidationError(msg string) *ValidationError {
+	return &ValidationError{msg: msg}
 }
 
-// ErrQuotaExceeded is returned when a user's upload quota would be exceeded.
-var ErrQuotaExceeded = &quotaError{}
-
-type quotaError struct{}
-
-func (e *quotaError) Error() string    { return "upload quota exceeded" }
-func (e *quotaError) HTTPStatus() int  { return http.StatusRequestEntityTooLarge }
+// NewValidationErrorf creates a ValidationError with a formatted message.
+func NewValidationErrorf(format string, args ...any) *ValidationError {
+	return &ValidationError{msg: fmt.Sprintf(format, args...)}
+}

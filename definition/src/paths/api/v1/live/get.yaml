@@ -14,10 +14,10 @@ get:
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/LiveStream.yaml'
+            $ref: '../../../../components/schemas/ResponseLiveStream.yaml'
     '404':
       description: Stream not found
       content:
         application/json:
           schema:
-            $ref: '../../../components/schemas/Error.yaml'
+            $ref: '../../../../components/schemas/Error.yaml'

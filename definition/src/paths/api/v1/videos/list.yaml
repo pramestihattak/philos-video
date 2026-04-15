@@ -3,8 +3,8 @@ get:
   summary: List videos
   tags: [videos]
   parameters:
-    - $ref: '../../../components/parameters/PageParam.yaml'
-    - $ref: '../../../components/parameters/LimitParam.yaml'
+    - $ref: '../../../../components/parameters/PageParam.yaml'
+    - $ref: '../../../../components/parameters/LimitParam.yaml'
   responses:
     '200':
       description: List of videos
@@ -13,4 +13,4 @@ get:
           schema:
             type: array
             items:
-              $ref: '../../../components/schemas/Video.yaml'
+              $ref: '../../../../components/schemas/ResponseVideo.yaml'
